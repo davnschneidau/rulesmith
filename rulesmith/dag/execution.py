@@ -78,6 +78,47 @@ class ExecutionEngine:
                 start_time = time.time()
                 node_outputs = node.execute(state, context)
 
+                # Apply guardrails if attached
+                if hasattr(node, "_guard_policies") and node._guard_policies:
+                    from rulesmith.guardrails.execution import guard_executor
+                    from rulesmith.guardrails.mlflow import log_guard_results, log_guard_policy
+
+                    # Evaluate all guard policies
+                    for guard_policy in node._guard_policies:
+                        # Log policy configuration
+                        if supports_mlflow:
+                            log_guard_policy(
+                                guard_policy.name,
+                                guard_policy.checks,
+                                node_name,
+                            )
+
+                        # Apply guard policy
+                        node_outputs = guard_executor.apply_policy(
+                            guard_policy,
+                            inputs=node_inputs,
+                            outputs=node_outputs,
+                        )
+
+                        # Log guard results to MLflow
+                        if supports_mlflow:
+                            # Get guard results from output
+                            guard_results = node_outputs.get("_guard_results", [])
+                            if guard_results:
+                                from rulesmith.guardrails.execution import GuardResult
+
+                                results = [
+                                    GuardResult(**r) if isinstance(r, dict) else r
+                                    for r in guard_results
+                                ]
+                                log_guard_results(results, node_name)
+
+                        # Check if blocked
+                        if node_outputs.get("_guard_blocked"):
+                            raise ValueError(
+                                f"Guard blocked execution: {node_outputs.get('_guard_message', 'Unknown reason')}"
+                            )
+
                 # Set execution metadata if context supports it
                 if node_ctx:
                     # Try to get code hash from rule nodes

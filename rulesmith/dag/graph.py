@@ -258,25 +258,47 @@ class Rulebook:
         self._edges.append(edge)
         return self
 
-    def attach_guard(self, node_name: str, guard_fn: Callable) -> "Rulebook":
+    def attach_guard(
+        self,
+        node_name: str,
+        guard_policy: Any,
+        guard_fn: Optional[Callable] = None,
+    ) -> "Rulebook":
         """
-        Attach a guardrail to a node.
+        Attach a guardrail policy to a node.
 
         Args:
             node_name: Node name
-            guard_fn: Guard function
+            guard_policy: GuardPolicy instance or GuardPack
+            guard_fn: Optional guard function (deprecated, use guard_policy)
 
         Returns:
             Self for chaining
         """
-        # This will be enhanced in Phase 5
-        # For now, just store reference
         if node_name not in self._nodes:
             raise ValueError(f"Node '{node_name}' not found")
 
-        if not hasattr(self._nodes[node_name], "_guards"):
-            self._nodes[node_name]._guards = []
-        self._nodes[node_name]._guards.append(guard_fn)
+        node = self._nodes[node_name]
+
+        # Support GuardPack
+        from rulesmith.guardrails.packs import GuardPack
+
+        if isinstance(guard_policy, GuardPack):
+            guard_policy = guard_policy.to_policy(when_node=node_name)
+
+        # Store guard policy
+        if not hasattr(node, "_guard_policies"):
+            node._guard_policies = []
+        node._guard_policies.append(guard_policy)
+
+        # Register default guards if not already done
+        register_default_guards(guard_executor)
+
+        # Legacy support for guard functions
+        if guard_fn:
+            if not hasattr(node, "_guards"):
+                node._guards = []
+            node._guards.append(guard_fn)
 
         return self
 
