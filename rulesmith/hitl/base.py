@@ -46,11 +46,28 @@ class HITLQueue(ABC):
 
     @abstractmethod
     def submit(self, request: ReviewRequest) -> str:
-        """Submit a review request."""
+        """
+        Submit a review request.
+
+        Args:
+            request: ReviewRequest instance
+
+        Returns:
+            Request ID
+        """
         pass
 
     @abstractmethod
     def get_decision(self, request_id: str, timeout: Optional[float] = None) -> Optional[ReviewDecision]:
-        """Get decision for a request."""
+        """
+        Get decision for a request (blocking).
+
+        Args:
+            request_id: Request ID
+            timeout: Optional timeout in seconds
+
+        Returns:
+            ReviewDecision or None if timeout
+        """
         pass
 

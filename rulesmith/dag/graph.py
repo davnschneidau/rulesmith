@@ -10,10 +10,10 @@ from rulesmith.dag.nodes import (
     ForkNode,
     GateNode,
     GenAINode,
-    HITLNode,
     Node,
     RuleNode,
 )
+from rulesmith.hitl.node import HITLNode
 from rulesmith.dag.registry import rule_registry
 from rulesmith.io.ser import ABArm, Edge, NodeSpec, RulebookSpec
 
@@ -172,6 +172,8 @@ class Rulebook:
         name: str,
         queue: Any,
         timeout: Optional[float] = None,
+        async_mode: bool = False,
+        active_learning_threshold: Optional[float] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> "Rulebook":
         """
@@ -179,14 +181,23 @@ class Rulebook:
 
         Args:
             name: Node name
-            queue: HITL queue instance
+            queue: HITL queue instance (HITLQueue)
             timeout: Optional timeout in seconds
+            async_mode: If True, don't block execution
+            active_learning_threshold: Optional confidence threshold for active learning
             params: Optional parameters
 
         Returns:
             Self for chaining
         """
-        node = HITLNode(name, queue, timeout=timeout, params=params)
+        node = HITLNode(
+            name,
+            queue,
+            timeout=timeout,
+            async_mode=async_mode,
+            active_learning_threshold=active_learning_threshold,
+            params=params,
+        )
         self._nodes[name] = node
         return self
 

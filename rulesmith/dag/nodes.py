@@ -332,24 +332,7 @@ class GenAINode(Node):
         return output
 
 
-class HITLNode(Node):
-    """Node that submits a request for human review."""
-
-    def __init__(
-        self,
-        name: str,
-        queue,
-        timeout: Optional[float] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(name, "hitl")
-        self.queue = queue
-        self.timeout = timeout
-        self.params = params or {}
-
-    def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Submit HITL request and await decision."""
-        # This will be enhanced in Phase 6 with actual HITL integration
-        # For now, placeholder implementation
-        return {"status": "pending", "message": "HITL node not implemented yet"}
+# HITLNode is now in rulesmith.hitl.node module
+# Import it here for backwards compatibility
+from rulesmith.hitl.node import HITLNode
 
