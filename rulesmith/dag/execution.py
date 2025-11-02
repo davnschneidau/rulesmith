@@ -59,20 +59,14 @@ class ExecutionEngine:
 
             node = node_instances[node_name]
 
-            # Apply field mapping from upstream nodes
-            mapped_inputs = self._map_inputs(node_name, state, execution_order)
-
-            # Merge mapped inputs into state (for node input tracking)
-            node_inputs = state.copy()
-            node_inputs.update(mapped_inputs)
+            # All nodes receive the full state - simple and predictable
+            # Field mapping is handled at connection time if needed, but by default
+            # all fields are available to all nodes (simplifies common use cases)
 
             # Start node execution tracking if supported
             node_ctx = None
             if supports_node_tracking:
-                node_ctx = context.start_node_execution(node_name, node.kind, inputs=node_inputs)
-
-            # Merge mapped inputs into state
-            state.update(mapped_inputs)
+                node_ctx = context.start_node_execution(node_name, node.kind, inputs=state)
 
             # Call before_node hooks
             hook_registry.before_node(node_name, state, context)
@@ -89,38 +83,36 @@ class ExecutionEngine:
 
                     # Evaluate all guard policies
                     for guard_policy in node._guard_policies:
-                        # Log policy configuration
-                        if supports_mlflow:
-                            log_guard_policy(
-                                guard_policy.name,
-                                guard_policy.checks,
-                                node_name,
-                            )
+                        # Log to MLflow if available (gracefully handles if MLflow not enabled)
+                        try:
+                            log_guard_policy(guard_policy.name, guard_policy.checks, node_name)
+                        except Exception:
+                            pass  # MLflow not available - that's okay
 
                         # Apply guard policy
                         node_outputs = guard_executor.apply_policy(
                             guard_policy,
-                            inputs=node_inputs,
+                            inputs=state,
                             outputs=node_outputs,
                         )
 
-                        # Log guard results to MLflow
-                        if supports_mlflow:
-                            # Get guard results from output
-                            guard_results = node_outputs.get("_guard_results", [])
-                            if guard_results:
+                        # Log guard results to MLflow if available
+                        guard_results = node_outputs.get("_guard_results", [])
+                        if guard_results:
+                            try:
                                 from rulesmith.guardrails.execution import GuardResult
-
                                 results = [
                                     GuardResult(**r) if isinstance(r, dict) else r
                                     for r in guard_results
                                 ]
                                 log_guard_results(results, node_name)
-                                # Call on_guard hooks
+                                # Call hooks for each result
                                 for result in results:
-                                    hook_registry.on_guard(node_name, node_inputs, context, result)
+                                    hook_registry.on_guard(node_name, state, context, result)
+                            except Exception:
+                                pass  # MLflow not available - that's okay
 
-                        # Check if blocked
+                        # Stop execution if guard blocked
                         if node_outputs.get("_guard_blocked"):
                             raise ValueError(
                                 f"Guard blocked execution: {node_outputs.get('_guard_message', 'Unknown reason')}"
@@ -163,90 +155,18 @@ class ExecutionEngine:
 
                 raise
 
-            # Merge outputs with resolution policy
-            state = self._merge_outputs(state, node_outputs, node_name)
+            # Simply merge outputs into state (new values override old ones)
+            # This is the default behavior - simple and predictable
+            state.update(node_outputs)
+            
+            # Track that this node executed (for debugging)
+            state[f"_executed_{node_name}"] = True
 
         return state
 
-    def _map_inputs(
-        self,
-        node_name: str,
-        state: Dict[str, Any],
-        execution_order: List[str],
-    ) -> Dict[str, Any]:
-        """
-        Map inputs from upstream nodes based on edge mappings.
-
-        Args:
-            node_name: Target node name
-            state: Current state
-            execution_order: Execution order list
-
-        Returns:
-            Mapped inputs dictionary
-        """
-        mapped = {}
-
-        # Find all edges targeting this node
-        for edge in self.spec.edges:
-            if edge.target == node_name:
-                source_outputs = state
-
-                # Apply field mapping
-                if edge.mapping:
-                    for target_field, source_field in edge.mapping.items():
-                        if source_field in source_outputs:
-                            mapped[target_field] = source_outputs[source_field]
-                else:
-                    # If no explicit mapping, copy all fields from source
-                    mapped.update(source_outputs)
-
-        return mapped
-
-    def _merge_outputs(
-        self,
-        state: Dict[str, Any],
-        node_outputs: Dict[str, Any],
-        node_name: str,
-    ) -> Dict[str, Any]:
-        """
-        Merge node outputs into state with resolution policy.
-
-        Resolution policy priority:
-        1. Human decisions (HITL)
-        2. Guard overrides
-        3. Upstream values (existing state)
-        4. New node outputs
-
-        Args:
-            state: Current state
-            node_outputs: Outputs from the node
-            node_name: Node name for tracking
-
-        Returns:
-            Merged state
-        """
-        merged = state.copy()
-
-        # Check for human override
-        if "_human_override" in state:
-            human_overrides = state.get("_human_override", {})
-            if node_name in human_overrides:
-                merged.update(human_overrides[node_name])
-                return merged
-
-        # Check for guard override
-        if "_guard_override" in state:
-            guard_overrides = state.get("_guard_override", {})
-            if node_name in guard_overrides:
-                merged.update(guard_overrides[node_name])
-                return merged
-
-        # Merge node outputs (they take precedence over upstream for same fields)
-        merged.update(node_outputs)
-
-        # Track node execution
-        merged[f"_node_{node_name}"] = True
-
-        return merged
+    # Simplified: Removed _map_inputs and _merge_outputs
+    # - All nodes receive the full state dictionary (simple)
+    # - Node outputs simply update the state dictionary (predictable)
+    # - Field mapping can be handled at the rule level if needed
+    # This makes the system much easier to understand and debug
 

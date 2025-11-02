@@ -379,23 +379,17 @@ class Rulebook:
         engine = ExecutionEngine(spec)
         engine.register_node(self._nodes)
 
-        # Create context if not provided
+        # Create simple context if not provided
+        # For most users, MLflow integration "just works" - no need to understand contexts
         if context is None:
             if enable_mlflow:
-                # Use MLflow-aware context
                 from rulesmith.runtime.mlflow_context import MLflowRunContext
-
-                context = MLflowRunContext(
-                    rulebook_spec=spec,
-                    enable_mlflow=enable_mlflow,
-                )
+                context = MLflowRunContext(rulebook_spec=spec, enable_mlflow=True)
             else:
-                # Use basic context
                 from rulesmith.runtime.context import RunContext
-
                 context = RunContext()
 
-        # Execute with context manager support
+        # Execute - context manager handles setup/teardown automatically
         if hasattr(context, "__enter__"):
             with context:
                 return engine.execute(payload, context, nodes=self._nodes)

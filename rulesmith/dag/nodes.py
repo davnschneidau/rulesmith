@@ -39,23 +39,29 @@ class RuleNode(Node):
         self.params = params or {}
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Execute the rule function with inputs from state."""
-        # Extract inputs from state based on function signature
+        """
+        Execute the rule function. 
+        
+        Simple approach: Extract function parameters from state and call the function.
+        If a parameter is missing from state, it uses the default from params or function signature.
+        """
         import inspect
 
         sig = inspect.signature(self.rule_func)
         kwargs = {}
+        
+        # Extract function parameters from state
         for param_name in sig.parameters:
             if param_name in state:
                 kwargs[param_name] = state[param_name]
-
-        # Merge with params
-        kwargs.update(self.params)
+            elif param_name in self.params:
+                kwargs[param_name] = self.params[param_name]
+            # If not in state or params, let Python handle the default/missing error
 
         # Call the function
         result = self.rule_func(**kwargs)
 
-        # Ensure result is a dict
+        # Always return a dict for consistency
         if not isinstance(result, dict):
             return {"result": result}
 
