@@ -42,12 +42,8 @@ def log_rulebook_model(
     # Serialize rulebook to spec
     spec = rulebook.to_spec()
 
-    # Create artifact directory structure
-    artifacts = {}
-    spec_path = os.path.join(artifact_path, "rulebook_spec.json")
-    with open(spec_path, "w") as f:
-        json.dump(spec.model_dump(), f, indent=2)
-    artifacts["rulebook_spec.json"] = spec_path
+    # Log spec as dict (artifact)
+    mlflow.log_dict(spec.model_dump(), "rulebook_spec.json")
 
     # Infer signature if not provided
     if signature is None:
@@ -82,11 +78,17 @@ class RulebookPyfunc(PythonModel):
         """Load rulebook spec from artifacts."""
         import os
 
-        spec_path = os.path.join(context.artifacts["rulebook_spec.json"])
-        if not os.path.exists(spec_path):
-            # Try alternative path structure
-            artifact_dir = os.path.dirname(context.artifacts.get("rulebook_spec.json", "."))
+        # Get the artifact path
+        artifact_path = context.artifacts.get("rulebook_spec.json")
+        if artifact_path:
+            spec_path = artifact_path
+        else:
+            # Try to find it in the artifact directory
+            artifact_dir = getattr(context, "artifact_path", "model")
             spec_path = os.path.join(artifact_dir, "rulebook_spec.json")
+
+        if not os.path.exists(spec_path):
+            raise FileNotFoundError(f"Rulebook spec not found at {spec_path}")
 
         with open(spec_path, "r") as f:
             spec_dict = json.load(f)

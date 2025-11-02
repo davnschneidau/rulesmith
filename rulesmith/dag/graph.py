@@ -250,13 +250,19 @@ class Rulebook:
             metadata=self.metadata,
         )
 
-    def run(self, payload: Dict[str, Any], context: Optional[Any] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        payload: Dict[str, Any],
+        context: Optional[Any] = None,
+        enable_mlflow: bool = True,
+    ) -> Dict[str, Any]:
         """
         Execute the rulebook with a payload.
 
         Args:
             payload: Input payload dictionary
-            context: Optional execution context
+            context: Optional execution context (RunContext or MLflowRunContext)
+            enable_mlflow: Whether to enable MLflow logging (default: True)
 
         Returns:
             Final output state
@@ -265,11 +271,26 @@ class Rulebook:
         engine = ExecutionEngine(spec)
         engine.register_node(self._nodes)
 
-        # Create minimal context if not provided
+        # Create context if not provided
         if context is None:
-            from types import SimpleNamespace
+            if enable_mlflow:
+                # Use MLflow-aware context
+                from rulesmith.runtime.mlflow_context import MLflowRunContext
 
-            context = SimpleNamespace(identity=None, run_id=None)
+                context = MLflowRunContext(
+                    rulebook_spec=spec,
+                    enable_mlflow=enable_mlflow,
+                )
+            else:
+                # Use basic context
+                from rulesmith.runtime.context import RunContext
 
-        return engine.execute(payload, context, nodes=self._nodes)
+                context = RunContext()
+
+        # Execute with context manager support
+        if hasattr(context, "__enter__"):
+            with context:
+                return engine.execute(payload, context, nodes=self._nodes)
+        else:
+            return engine.execute(payload, context, nodes=self._nodes)
 

@@ -1,10 +1,12 @@
 """Core execution engine with resolution policy."""
 
+import time
 from typing import Any, Dict, List, Optional
 
 from rulesmith.dag.nodes import Node
 from rulesmith.dag.scheduler import topological_sort
 from rulesmith.io.ser import Edge, RulebookSpec
+from rulesmith.runtime.context import RunContext
 
 
 class ExecutionEngine:
@@ -29,7 +31,7 @@ class ExecutionEngine:
 
         Args:
             payload: Initial input payload
-            context: Execution context (RunContext)
+            context: Execution context (RunContext or MLflowRunContext)
             nodes: Optional node instances (if None, uses registered nodes)
 
         Returns:
@@ -45,6 +47,10 @@ class ExecutionEngine:
         # Initialize state with payload
         state = payload.copy()
 
+        # Check if context supports MLflow tracking
+        supports_mlflow = hasattr(context, "enable_mlflow") and context.enable_mlflow
+        supports_node_tracking = hasattr(context, "start_node_execution")
+
         # Execute nodes in topological order
         for node_name in execution_order:
             if node_name not in node_instances:
@@ -55,15 +61,52 @@ class ExecutionEngine:
             # Apply field mapping from upstream nodes
             mapped_inputs = self._map_inputs(node_name, state, execution_order)
 
+            # Merge mapped inputs into state (for node input tracking)
+            node_inputs = state.copy()
+            node_inputs.update(mapped_inputs)
+
+            # Start node execution tracking if supported
+            node_ctx = None
+            if supports_node_tracking:
+                node_ctx = context.start_node_execution(node_name, node.kind, inputs=node_inputs)
+
             # Merge mapped inputs into state
             state.update(mapped_inputs)
 
             # Execute node
             try:
+                start_time = time.time()
                 node_outputs = node.execute(state, context)
+
+                # Set execution metadata if context supports it
+                if node_ctx:
+                    # Try to get code hash from rule nodes
+                    if node.kind == "rule" and hasattr(node, "rule_func"):
+                        if hasattr(node.rule_func, "_rule_spec"):
+                            rule_spec = node.rule_func._rule_spec
+                            if rule_spec.code_hash:
+                                node_ctx.set_code_hash(rule_spec.code_hash)
+
+                    # Try to get model URI from BYOM/GenAI nodes
+                    if node.kind in ("byom", "llm") and hasattr(node, "model_uri"):
+                        if node.model_uri:
+                            node_ctx.set_model_uri(node.model_uri)
+
+                    # Finish node execution tracking
+                    execution_time = time.time() - start_time
+                    node_ctx.finish(node_outputs, metrics={"execution_time_seconds": execution_time})
+
             except Exception as e:
                 # Error handling - could be enhanced with retries
                 state[f"_error_{node_name}"] = str(e)
+
+                # Log error in MLflow if supported
+                if node_ctx:
+                    try:
+                        node_ctx.finish({}, metrics={"error": 1.0})
+                    except Exception:
+                        pass
+
                 raise
 
             # Merge outputs with resolution policy
