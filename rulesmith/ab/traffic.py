@@ -2,8 +2,16 @@
 
 import hashlib
 import random
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+from rulesmith.ab.policies import (
+    EpsilonGreedyPolicy,
+    HashPolicy,
+    RandomPolicy,
+    ThompsonSamplingPolicy,
+    TrafficPolicy,
+    UCBPolicy,
+)
 from rulesmith.io.ser import ABArm
 
 
@@ -26,6 +34,8 @@ def pick_arm(
     arms: List[ABArm],
     identity: Optional[str] = None,
     policy: str = "hash",
+    policy_instance: Optional[TrafficPolicy] = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> ABArm:
     """
     Select an A/B arm based on policy.
@@ -33,7 +43,9 @@ def pick_arm(
     Args:
         arms: List of A/B arms
         identity: Optional identity for deterministic hashing
-        policy: "hash" for deterministic or "random" for random selection
+        policy: Policy name ("hash", "random", "thompson_sampling", "ucb1", "epsilon_greedy")
+        policy_instance: Optional TrafficPolicy instance (if provided, overrides policy string)
+        context: Optional context dictionary for policies
 
     Returns:
         Selected ABArm
@@ -41,44 +53,38 @@ def pick_arm(
     if not arms:
         raise ValueError("No arms provided")
 
-    if policy == "random":
-        # Random selection weighted by arm weights
-        weights = [arm.weight for arm in arms]
-        total_weight = sum(weights)
-        if total_weight == 0:
-            # Equal probability if all weights are 0
-            return random.choice(arms)
+    # Use provided policy instance if available
+    if policy_instance is not None:
+        ctx = context or {}
+        if identity:
+            ctx["identity"] = identity
+        return policy_instance.select_arm(arms, ctx)
 
-        r = random.random() * total_weight
-        cumulative = 0
-        for arm in arms:
-            cumulative += arm.weight
-            if r <= cumulative:
-                return arm
+    # Create policy instance based on policy string
+    ctx = context or {}
+    if identity:
+        ctx["identity"] = identity
 
-        # Fallback to last arm
-        return arms[-1]
-
-    elif policy == "hash":
-        # Deterministic hash-based selection
-        if identity is None:
-            # Fallback to random if no identity
-            return pick_arm(arms, identity, policy="random")
-
-        # Hash the identity to get a value in [0, 1)
-        hash_val = int(hashlib.md5(identity.encode("utf-8")).hexdigest(), 16)
-        normalized = (hash_val % 10000) / 10000.0
-
-        # Select arm based on cumulative weights
-        cumulative = 0
-        for arm in arms:
-            cumulative += arm.weight
-            if normalized <= cumulative:
-                return arm
-
-        # Fallback to last arm
-        return arms[-1]
-
+    if policy == "hash" or policy == "deterministic":
+        policy_instance = HashPolicy()
+    elif policy == "random":
+        seed = ctx.get("seed")
+        policy_instance = RandomPolicy(seed=seed)
+    elif policy == "thompson_sampling":
+        arms_history = ctx.get("arms_history")
+        policy_instance = ThompsonSamplingPolicy(arms_history=arms_history)
+    elif policy == "ucb1" or policy == "ucb":
+        arms_history = ctx.get("arms_history")
+        policy_instance = UCBPolicy(arms_history=arms_history)
+    elif policy == "epsilon_greedy" or policy.startswith("epsilon"):
+        epsilon = ctx.get("epsilon", 0.1)
+        arms_history = ctx.get("arms_history")
+        policy_instance = EpsilonGreedyPolicy(epsilon=epsilon, arms_history=arms_history)
     else:
-        raise ValueError(f"Unknown policy: {policy}")
+        raise ValueError(
+            f"Unknown policy: {policy}. "
+            "Supported: 'hash', 'random', 'thompson_sampling', 'ucb1', 'epsilon_greedy'"
+        )
+
+    return policy_instance.select_arm(arms, ctx)
 

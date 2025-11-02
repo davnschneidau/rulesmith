@@ -71,6 +71,8 @@ class Rulebook:
         name: str,
         arms: List[ABArm],
         policy: Optional[str] = "hash",
+        policy_instance: Optional[Any] = None,
+        track_metrics: bool = True,
     ) -> "Rulebook":
         """
         Add a fork node for A/B testing.
@@ -78,12 +80,20 @@ class Rulebook:
         Args:
             name: Fork node name
             arms: List of A/B arms
-            policy: Traffic splitting policy ("hash" or "random")
+            policy: Traffic splitting policy ("hash", "random", "thompson_sampling", "ucb1", "epsilon_greedy")
+            policy_instance: Optional TrafficPolicy instance (overrides policy string)
+            track_metrics: Whether to track A/B metrics in MLflow
 
         Returns:
             Self for chaining
         """
-        node = ForkNode(name, arms, policy=policy)
+        node = ForkNode(
+            name,
+            arms,
+            policy=policy,
+            policy_instance=policy_instance,
+            track_metrics=track_metrics,
+        )
         self._nodes[name] = node
         return self
 

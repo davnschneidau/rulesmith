@@ -68,26 +68,84 @@ class ForkNode(Node):
         name: str,
         arms: List[ABArm],
         policy: Optional[str] = "hash",
+        policy_instance: Optional[Any] = None,
+        track_metrics: bool = True,
     ):
+        """
+        Initialize ForkNode.
+
+        Args:
+            name: Node name
+            arms: List of A/B arms
+            policy: Policy name (hash, random, thompson_sampling, ucb1, epsilon_greedy)
+            policy_instance: Optional TrafficPolicy instance
+            track_metrics: Whether to track A/B metrics for MLflow
+        """
         super().__init__(name, "fork")
         self.arms = arms
-        self.policy = policy
+        self.policy = policy or "hash"
+        self.policy_instance = policy_instance
+        self.track_metrics = track_metrics
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """Select an arm and route traffic."""
         from rulesmith.ab.traffic import pick_arm
 
         identity = getattr(context, "identity", None) or state.get("identity")
-        selected_arm = pick_arm(self.arms, identity, policy=self.policy)
+        seed = getattr(context, "seed", None)
+
+        # Build context for policy
+        policy_context = {
+            "identity": identity,
+            "seed": seed,
+        }
+
+        # Try to get arms_history from context if available
+        if hasattr(context, "arms_history"):
+            policy_context["arms_history"] = context.arms_history
+
+        # Select arm
+        selected_arm = pick_arm(
+            self.arms,
+            identity=identity,
+            policy=self.policy,
+            policy_instance=self.policy_instance,
+            context=policy_context,
+        )
 
         # Store selection in state
         state["_fork_selection"] = {
             "fork_name": self.name,
             "selected_arm": selected_arm.node,
+            "policy": self.policy,
+            "arm_weight": selected_arm.weight,
         }
 
-        # Return empty dict - fork doesn't modify state, just routes
-        return {}
+        # Track A/B bucket in context if supported
+        bucket = f"{self.name}:{selected_arm.node}"
+        if hasattr(context, "set_ab_bucket"):
+            context.set_ab_bucket(bucket)
+
+        # Log metrics to MLflow if supported
+        if self.track_metrics and hasattr(context, "enable_mlflow") and context.enable_mlflow:
+            try:
+                import mlflow
+
+                mlflow.set_tag("rulesmith.ab_fork", self.name)
+                mlflow.set_tag("rulesmith.ab_arm", selected_arm.node)
+                mlflow.set_tag("rulesmith.ab_policy", self.policy)
+                mlflow.log_metric("ab_arm_weight", selected_arm.weight)
+            except Exception:
+                pass  # Ignore MLflow errors
+
+        # Return selection info
+        return {
+            "_ab_selection": {
+                "fork": self.name,
+                "arm": selected_arm.node,
+                "policy": self.policy,
+            }
+        }
 
 
 class GateNode(Node):
