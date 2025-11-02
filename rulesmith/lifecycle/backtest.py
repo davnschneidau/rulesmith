@@ -3,6 +3,10 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from rulesmith.utils.logging import get_logger, log_error
+
+logger = get_logger("lifecycle")
+
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -183,8 +187,17 @@ class BacktestRunner:
 
         Args:
             rulebook: Rulebook instance to test
+
+        Raises:
+            AttributeError: If rulebook doesn't have required name/version attributes
         """
         self.rulebook = rulebook
+        
+        # Validate rulebook has required attributes
+        if not hasattr(rulebook, "name"):
+            raise AttributeError("Rulebook must have a 'name' attribute")
+        if not hasattr(rulebook, "version"):
+            raise AttributeError("Rulebook must have a 'version' attribute")
 
     def run(
         self,
@@ -206,17 +219,35 @@ class BacktestRunner:
 
         Returns:
             BacktestReport with metrics
+
+        Raises:
+            ImportError: If pandas is not available
+            ValueError: If historical_data is invalid
+            AttributeError: If rulebook doesn't have required methods
         """
         if not HAS_PANDAS:
-            raise ImportError("pandas is required for backtesting")
+            raise ImportError(
+                "pandas is required for backtesting. Install with: pip install pandas"
+            )
+
+        # Validate rulebook can run
+        if not hasattr(self.rulebook, "run") or not callable(getattr(self.rulebook, "run")):
+            raise AttributeError("Rulebook must have a callable 'run' method")
 
         # Convert to DataFrame if needed
         if isinstance(historical_data, list):
+            if not historical_data:
+                raise ValueError("historical_data list cannot be empty")
             df = pd.DataFrame(historical_data)
         elif isinstance(historical_data, pd.DataFrame):
+            if len(historical_data) == 0:
+                raise ValueError("historical_data DataFrame cannot be empty")
             df = historical_data.copy()
         else:
-            raise ValueError("historical_data must be pandas DataFrame or list of dicts")
+            raise ValueError(
+                "historical_data must be pandas DataFrame or list of dicts, "
+                f"got {type(historical_data).__name__}"
+            )
 
         # Apply sample limit
         if sample_limit and len(df) > sample_limit:
@@ -276,13 +307,27 @@ class BacktestRunner:
                 metrics.total_decisions += 1
 
             except Exception as e:
-                errors.append(f"Row {idx}: {str(e)}")
+                error_msg = f"Row {idx}: {str(e)}"
+                errors.append(error_msg)
+                log_error(
+                    logger,
+                    f"Error processing backtest row {idx}",
+                    e,
+                    context={"row_index": str(idx)},
+                )
 
         # Calculate conversion metrics if available
         if conversion_column and conversion_column in df.columns:
             # This would require comparing conversion rates
             # For now, placeholder
             pass
+
+        # Warn if too many errors
+        if errors and len(errors) > len(df) * 0.1:  # More than 10% errors
+            logger.warning(
+                f"Backtest had {len(errors)} errors out of {len(df)} samples "
+                f"({len(errors)/len(df)*100:.1f}% error rate)"
+            )
 
         report = BacktestReport(
             rulebook_name=self.rulebook.name,

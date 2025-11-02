@@ -6,6 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from rulesmith.governance.audit import audit_logger
 from rulesmith.hitl.base import HITLQueue
+from rulesmith.utils.logging import get_logger, log_error
+
+logger = get_logger("operations")
 
 
 class EscalationLevel(str, Enum):
@@ -47,7 +50,13 @@ class EscalationRule:
         """Check if should escalate based on outputs."""
         try:
             return self.condition(outputs)
-        except Exception:
+        except Exception as e:
+            log_error(
+                logger,
+                f"Error evaluating escalation rule '{self.name}'",
+                e,
+                context={"rule_name": self.name},
+            )
             return False  # Don't escalate on condition errors
 
 
@@ -225,6 +234,12 @@ class EscalationManager:
                     "request_id": request_id,
                 }
             except Exception as e:
+                log_error(
+                    logger,
+                    f"Failed to submit escalation request for decision {decision_id}",
+                    e,
+                    context={"decision_id": decision_id, "path": path_name},
+                )
                 return {
                     "escalated": True,
                     "error": str(e),

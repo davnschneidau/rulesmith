@@ -3,6 +3,10 @@
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
+from rulesmith.utils.logging import get_logger, log_error
+
+logger = get_logger("compliance")
+
 
 class RetentionPolicy:
     """
@@ -174,17 +178,44 @@ class GDPRCompliance:
                     user_data = source.get_for_user(user_id)
                     if hasattr(source, "delete"):
                         for item in user_data:
-                            source.delete(item.id if hasattr(item, "id") else str(item))
-                            deleted_count += 1
+                            try:
+                                item_id = item.id if hasattr(item, "id") else str(item)
+                                source.delete(item_id)
+                                deleted_count += 1
+                            except Exception as e:
+                                log_error(
+                                    logger,
+                                    f"Failed to delete item for user {user_id}",
+                                    e,
+                                    context={"user_id": user_id, "source": source.__class__.__name__},
+                                )
+                                errors.append(str(e))
                 elif hasattr(source, "query"):
                     # Try query-based deletion
                     user_items = source.query(user_id=user_id)
                     if hasattr(source, "delete"):
                         for item in user_items:
-                            source.delete(item.id if hasattr(item, "id") else str(item))
-                            deleted_count += 1
+                            try:
+                                item_id = item.id if hasattr(item, "id") else str(item)
+                                source.delete(item_id)
+                                deleted_count += 1
+                            except Exception as e:
+                                log_error(
+                                    logger,
+                                    f"Failed to delete item for user {user_id}",
+                                    e,
+                                    context={"user_id": user_id, "source": source.__class__.__name__},
+                                )
+                                errors.append(str(e))
             except Exception as e:
-                errors.append(str(e))
+                error_msg = str(e)
+                errors.append(error_msg)
+                log_error(
+                    logger,
+                    f"Error processing GDPR deletion for source {source.__class__.__name__}",
+                    e,
+                    context={"user_id": user_id},
+                )
 
         return {
             "user_id": user_id,

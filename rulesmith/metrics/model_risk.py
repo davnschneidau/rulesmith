@@ -89,12 +89,13 @@ def calculate_psi(expected: List[float], actual: List[float], bins: int = 10) ->
         expected_hist = create_histogram(expected, bins)
         actual_hist = create_histogram(actual, bins)
         
+        import math
         psi = 0.0
         for i in range(bins):
             if expected_hist[i] > 0:
                 ratio = actual_hist[i] / expected_hist[i] if expected_hist[i] > 0 else 1.0
                 if ratio > 0:
-                    psi += (actual_hist[i] - expected_hist[i]) * np.log(ratio) if HAS_NUMPY else (actual_hist[i] - expected_hist[i]) * (np.log(ratio) if ratio > 0 else 0)
+                    psi += (actual_hist[i] - expected_hist[i]) * math.log(ratio)
         
         return psi
 

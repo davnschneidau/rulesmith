@@ -1,13 +1,16 @@
 """Alert system for rule monitoring."""
 
+import logging
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import urlparse
 
 from rulesmith.governance.audit import audit_logger
+from rulesmith.utils.logging import get_logger, log_error
+
+logger = get_logger("alerts")
 
 
 class AlertSeverity(str, Enum):
@@ -71,8 +74,14 @@ class AlertRule:
                 self.last_triggered = datetime.utcnow()
 
             return should_fire
-        except Exception:
-            # If condition evaluation fails, don't fire alert
+        except Exception as e:
+            # If condition evaluation fails, log error but don't fire alert
+            log_error(
+                logger,
+                f"Error evaluating alert rule '{self.name}'",
+                e,
+                context={"rule_name": self.name},
+            )
             return False
 
 
@@ -145,9 +154,6 @@ class LoggingChannel(AlertChannel):
 
     def send(self, alert: Alert) -> bool:
         """Send alert via logging."""
-        import logging
-
-        logger = logging.getLogger("rulesmith.alerts")
         level = {
             AlertSeverity.INFO: logging.INFO,
             AlertSeverity.WARNING: logging.WARNING,
@@ -183,8 +189,22 @@ class WebhookChannel(AlertChannel):
                 json=alert.to_dict(),
                 timeout=self.timeout,
             )
+            if response.status_code >= 400:
+                logger.warning(
+                    f"Webhook alert failed: HTTP {response.status_code}",
+                    extra={"webhook_url": self.webhook_url, "alert_id": alert.alert_id},
+                )
             return response.status_code < 400
-        except Exception:
+        except ImportError:
+            logger.error("requests library not available for webhook alerts")
+            return False
+        except Exception as e:
+            log_error(
+                logger,
+                f"Failed to send webhook alert",
+                e,
+                context={"webhook_url": self.webhook_url, "alert_id": alert.alert_id},
+            )
             return False
 
 
@@ -233,7 +253,17 @@ class EmailChannel(AlertChannel):
             server.quit()
 
             return True
-        except Exception:
+        except Exception as e:
+            log_error(
+                logger,
+                f"Failed to send email alert",
+                e,
+                context={
+                    "smtp_server": self.smtp_server,
+                    "to_emails": self.to_emails,
+                    "alert_id": alert.alert_id,
+                },
+            )
             return False
 
 
@@ -283,8 +313,14 @@ class AlertManager:
                 for channel in self.channels:
                     try:
                         channel.send(alert)
-                    except Exception:
-                        pass  # Continue with other channels if one fails
+                    except Exception as e:
+                        log_error(
+                            logger,
+                            f"Failed to send alert via channel {channel.__class__.__name__}",
+                            e,
+                            context={"alert_id": alert.alert_id},
+                        )
+                        # Continue with other channels if one fails
 
                 # Store active alert
                 self.active_alerts[alert.alert_id] = alert
