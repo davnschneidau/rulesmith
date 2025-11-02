@@ -165,7 +165,7 @@ Rulesmith provides:
 
 - [Quickstart Guide](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API.md) (coming soon)
+- [API Reference](docs/API.md)
 
 ## License
 
