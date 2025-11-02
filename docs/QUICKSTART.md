@@ -1,0 +1,82 @@
+# Rulesmith Quickstart Guide
+
+## Installation
+
+```bash
+pip install rulesmith
+```
+
+## Basic Usage
+
+### 1. Define Rules
+
+```python
+from rulesmith import rule
+
+@rule(name="check_age", inputs=["age"], outputs=["eligible"])
+def check_age(age: int) -> dict:
+    """Check if age meets requirement."""
+    return {"eligible": age >= 18}
+```
+
+### 2. Build a Rulebook
+
+```python
+from rulesmith import rule, Rulebook
+
+@rule(name="calculate_score", inputs=["age", "income"], outputs=["score"])
+def calculate_score(age: int, income: float) -> dict:
+    return {"score": (age * 10) + (income / 1000)}
+
+# Build rulebook
+rb = Rulebook(name="credit_check", version="1.0.0")
+rb.add_rule(check_age, as_name="age_check")
+rb.add_rule(calculate_score, as_name="scoring")
+rb.connect("age_check", "scoring")
+```
+
+### 3. Execute
+
+```python
+result = rb.run({"age": 25, "income": 50000})
+print(result)  # {"eligible": True, "score": 550.0}
+```
+
+## Advanced Features
+
+### A/B Testing
+
+```python
+from rulesmith.io.ser import ABArm
+
+arms = [
+    ABArm(node="variant_a", weight=0.5),
+    ABArm(node="variant_b", weight=0.5),
+]
+rb.add_fork("ab_test", arms, policy="thompson_sampling")
+```
+
+### Guardrails
+
+```python
+from rulesmith.guardrails.packs import PII_PACK
+
+rb.attach_guard("node_name", PII_PACK)
+```
+
+### MLflow Integration
+
+```python
+from rulesmith.mlflow_flavor import log_rulebook_model
+import mlflow
+
+with mlflow.start_run():
+    log_rulebook_model(rb, registered_model_name="credit_check")
+```
+
+## Next Steps
+
+- See `examples/` for more examples
+- Check `docs/` for detailed documentation
+- Read API docs in code
+

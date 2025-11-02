@@ -90,9 +90,82 @@ Rulesmith integrates deeply with MLflow 3:
 - **Lineage**: Complete dependency graph with code hashes and model URIs
 - **Evaluation**: Native `mlflow.evaluate()` integration with custom scorers
 
+## Advanced Features
+
+### A/B Testing with Bandits
+
+```python
+from rulesmith.ab.policies import ThompsonSamplingPolicy
+from rulesmith.io.ser import ABArm
+
+policy = ThompsonSamplingPolicy()
+arms = [ABArm(node="variant_a", weight=1.0), ABArm(node="variant_b", weight=1.0)]
+rb.add_fork("ab_test", arms, policy_instance=policy)
+```
+
+### Guardrails
+
+```python
+from rulesmith.guardrails.packs import PII_PACK, TOXICITY_PACK
+
+rb.attach_guard("llm_node", PII_PACK)  # Block PII
+rb.attach_guard("llm_node", TOXICITY_PACK)  # Block toxicity
+```
+
+### Human-in-the-Loop
+
+```python
+from rulesmith.hitl.adapters import LocalFileQueue
+
+queue = LocalFileQueue(queue_dir="./reviews")
+rb.add_hitl("review", queue, active_learning_threshold=0.7)
+```
+
+### Model Promotion with SLOs
+
+```python
+from rulesmith.governance.promotion import PromotionPolicy, SLO, promote_model
+
+policy = PromotionPolicy(
+    name="prod_policy",
+    slos=[
+        SLO("accuracy", 0.95),
+        SLO("latency_ms", 100, operator="<="),
+    ],
+)
+result = promote_model("my_model", "@staging", "@prod", policy=policy)
+```
+
+### Evaluation
+
+```python
+from rulesmith.evaluation import evaluate_rulebook, accuracy_scorer
+
+result = evaluate_rulebook("models:/rulebook/1", evaluation_data)
+score = accuracy_scorer(data, predictions, targets="label")
+```
+
+## Architecture
+
+Rulesmith provides:
+
+- **DAG Execution**: Topological sorting, parallel execution support
+- **MLflow Integration**: Native pyfunc flavor, nested runs, traces
+- **Model Support**: BYOM, LangChain, LangGraph, GenAI providers
+- **A/B Testing**: 5 bandit policies, traffic management
+- **Guardrails**: 8 built-in guards, 4 action types
+- **HITL**: 5 queue adapters, active learning
+- **Governance**: Promotion, diff, lineage, audit
+- **Evaluation**: MLflow integration, custom scorers
+- **Reliability**: Retry, rate limiting, circuit breakers, shadow mode
+- **Security**: PII redaction, secret detection
+- **Schemas**: Input/output validation, contracts
+
 ## Documentation
 
-See `docs/` for detailed guides and examples.
+- [Quickstart Guide](docs/QUICKSTART.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API Reference](docs/API.md) (coming soon)
 
 ## License
 

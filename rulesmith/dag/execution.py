@@ -7,6 +7,7 @@ from rulesmith.dag.nodes import Node
 from rulesmith.dag.scheduler import topological_sort
 from rulesmith.io.ser import Edge, RulebookSpec
 from rulesmith.runtime.context import RunContext
+from rulesmith.runtime.hooks import hook_registry
 
 
 class ExecutionEngine:
@@ -73,6 +74,9 @@ class ExecutionEngine:
             # Merge mapped inputs into state
             state.update(mapped_inputs)
 
+            # Call before_node hooks
+            hook_registry.before_node(node_name, state, context)
+
             # Execute node
             try:
                 start_time = time.time()
@@ -112,6 +116,9 @@ class ExecutionEngine:
                                     for r in guard_results
                                 ]
                                 log_guard_results(results, node_name)
+                                # Call on_guard hooks
+                                for result in results:
+                                    hook_registry.on_guard(node_name, node_inputs, context, result)
 
                         # Check if blocked
                         if node_outputs.get("_guard_blocked"):
@@ -137,9 +144,15 @@ class ExecutionEngine:
                     execution_time = time.time() - start_time
                     node_ctx.finish(node_outputs, metrics={"execution_time_seconds": execution_time})
 
+                # Call after_node hooks
+                hook_registry.after_node(node_name, state, context, node_outputs)
+
             except Exception as e:
                 # Error handling - could be enhanced with retries
                 state[f"_error_{node_name}"] = str(e)
+
+                # Call on_error hooks
+                hook_registry.on_error(node_name, state, context, e)
 
                 # Log error in MLflow if supported
                 if node_ctx:
