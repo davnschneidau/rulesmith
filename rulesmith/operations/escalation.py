@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from rulesmith.governance.audit import audit_logger
 from rulesmith.hitl.base import HITLQueue

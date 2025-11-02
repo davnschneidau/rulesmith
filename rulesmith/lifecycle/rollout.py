@@ -1,11 +1,12 @@
 """Phased rollout system for gradual rule deployment."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from rulesmith.ab.traffic import pick_arm
 from rulesmith.governance.promotion import PromotionPolicy, SLO, check_slos
-from rulesmith.io.ser import ABArm
+
+if TYPE_CHECKING:
+    from rulesmith.dag.graph import Rulebook
 
 
 class Cohort:
@@ -161,7 +162,12 @@ class CohortRollout:
     Integrates with A/B testing system to route traffic gradually.
     """
 
-    def __init__(self, rollout_plan: RolloutPlan, new_rulebook: Rulebook, production_rulebook: Rulebook):
+    def __init__(
+        self,
+        rollout_plan: RolloutPlan,
+        new_rulebook: "Rulebook",
+        production_rulebook: "Rulebook",
+    ):
         """
         Initialize cohort rollout.
 
