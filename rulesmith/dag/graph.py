@@ -3,6 +3,8 @@
 from typing import Any, Callable, Dict, List, Optional
 
 from rulesmith.dag.execution import ExecutionEngine
+from rulesmith.dag.langchain_node import LangChainNode
+from rulesmith.dag.langgraph_node import LangGraphNode
 from rulesmith.dag.nodes import (
     BYOMNode,
     ForkNode,
@@ -126,6 +128,8 @@ class Rulebook:
         name: str,
         model_uri: Optional[str] = None,
         provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+        gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> "Rulebook":
         """
@@ -134,13 +138,22 @@ class Rulebook:
         Args:
             name: Node name
             model_uri: Optional MLflow model URI
-            provider: Optional provider name
+            provider: Optional provider name (openai, anthropic, etc.)
+            model_name: Optional model name
+            gateway_uri: Optional MLflow AI Gateway URI
             params: Optional parameters
 
         Returns:
             Self for chaining
         """
-        node = GenAINode(name, model_uri=model_uri, provider=provider, params=params)
+        node = GenAINode(
+            name,
+            model_uri=model_uri,
+            provider=provider,
+            model_name=model_name,
+            gateway_uri=gateway_uri,
+            params=params,
+        )
         self._nodes[name] = node
         return self
 
@@ -164,6 +177,48 @@ class Rulebook:
             Self for chaining
         """
         node = HITLNode(name, queue, timeout=timeout, params=params)
+        self._nodes[name] = node
+        return self
+
+    def add_langchain(
+        self,
+        name: str,
+        chain_model_uri: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> "Rulebook":
+        """
+        Add a LangChain chain node.
+
+        Args:
+            name: Node name
+            chain_model_uri: MLflow model URI for LangChain chain
+            params: Optional parameters
+
+        Returns:
+            Self for chaining
+        """
+        node = LangChainNode(name, chain_model_uri, params=params)
+        self._nodes[name] = node
+        return self
+
+    def add_langgraph(
+        self,
+        name: str,
+        graph_model_uri: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> "Rulebook":
+        """
+        Add a LangGraph graph node.
+
+        Args:
+            name: Node name
+            graph_model_uri: MLflow model URI for LangGraph graph
+            params: Optional parameters
+
+        Returns:
+            Self for chaining
+        """
+        node = LangGraphNode(name, graph_model_uri, params=params)
         self._nodes[name] = node
         return self
 
@@ -235,6 +290,16 @@ class Rulebook:
                 node_spec.model_uri = node.model_uri
             elif isinstance(node, GenAINode):
                 node_spec.model_uri = node.model_uri
+                if hasattr(node, "provider"):
+                    node_spec.params["provider"] = node.provider
+                if hasattr(node, "model_name"):
+                    node_spec.params["model_name"] = node.model_name
+                if hasattr(node, "gateway_uri"):
+                    node_spec.params["gateway_uri"] = node.gateway_uri
+            elif isinstance(node, LangChainNode):
+                node_spec.model_uri = node.chain_model_uri
+            elif isinstance(node, LangGraphNode):
+                node_spec.model_uri = node.graph_model_uri
             elif isinstance(node, ForkNode):
                 node_spec.ab_arms = node.arms
             elif isinstance(node, GateNode):

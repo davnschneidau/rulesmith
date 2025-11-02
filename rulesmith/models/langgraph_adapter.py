@@ -18,18 +18,36 @@ class LGNode:
 
     def _load_graph(self):
         """Lazy load the LangGraph graph."""
-        # Placeholder - will be implemented in Phase 3
         if self._graph is None:
-            import mlflow.pyfunc
+            try:
+                import mlflow.pyfunc
 
-            self._graph = mlflow.pyfunc.load_model(self.graph_model_uri)
+                self._graph = mlflow.pyfunc.load_model(self.graph_model_uri)
+            except ImportError:
+                raise ImportError("MLflow is required for LangGraph adapter")
+            except Exception as e:
+                raise ValueError(f"Could not load LangGraph model from {self.graph_model_uri}: {str(e)}")
         return self._graph
 
     def invoke(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke the LangGraph graph."""
         graph = self._load_graph()
-        result = graph.invoke(inputs)
+
+        # Handle LangGraph compiled graph
+        if hasattr(graph, "invoke"):
+            result = graph.invoke(inputs)
+        elif hasattr(graph, "predict"):
+            result = graph.predict(inputs)
+        elif hasattr(graph, "__call__"):
+            result = graph(inputs)
+        else:
+            raise ValueError("LangGraph model does not support invoke, predict, or __call__")
+
+        # Normalize output
         if isinstance(result, dict):
             return result
-        return {"output": result}
+        elif isinstance(result, str):
+            return {"output": result}
+        else:
+            return {"output": result}
 

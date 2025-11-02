@@ -138,39 +138,32 @@ class BYOMNode(Node):
         super().__init__(name, "byom")
         self.model_uri = model_uri
         self.params = params or {}
-        self._model = None
+        self._byom_ref = None
 
-    def _load_model(self):
-        """Lazy load the MLflow model."""
-        if self._model is None:
-            import mlflow.pyfunc
+    def _get_byom_ref(self):
+        """Lazy load BYOM reference."""
+        if self._byom_ref is None:
+            from rulesmith.models.mlflow_byom import BYOMRef
 
-            self._model = mlflow.pyfunc.load_model(self.model_uri)
-        return self._model
+            self._byom_ref = BYOMRef(self.model_uri)
+        return self._byom_ref
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """Execute the MLflow model."""
-        try:
-            import pandas as pd
-        except ImportError:
-            raise ImportError("pandas is required for BYOMNode. Install with: pip install pandas")
+        byom_ref = self._get_byom_ref()
 
-        model = self._load_model()
-        # Prepare input - model expects pandas DataFrame or dict
-        if isinstance(state, dict):
-            # Convert dict to DataFrame row
-            input_df = pd.DataFrame([state])
-        else:
-            input_df = state
+        # Prepare inputs by merging state with params
+        inputs = state.copy()
+        inputs.update(self.params)
 
-        result = model.predict(input_df)
-        # Convert result to dict if needed
-        if isinstance(result, pd.DataFrame):
-            return result.iloc[0].to_dict()
-        elif isinstance(result, (list, tuple)) and len(result) > 0:
-            return {"prediction": result[0]}
-        else:
-            return {"result": result}
+        # Execute prediction
+        result = byom_ref.predict(inputs)
+
+        # Log model URI to context if supported
+        if hasattr(context, "set_model_uri"):
+            context.set_model_uri(self.model_uri)
+
+        return result
 
 
 class GenAINode(Node):
@@ -181,33 +174,102 @@ class GenAINode(Node):
         name: str,
         model_uri: Optional[str] = None,
         provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+        gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(name, "llm")
         self.model_uri = model_uri
-        self.provider = provider
+        self.provider = provider or "openai"
+        self.model_name = model_name
+        self.gateway_uri = gateway_uri
         self.params = params or {}
+        self._genai_wrapper = None
         self._chain = None
 
-    def _load_chain(self):
-        """Lazy load the LangChain/LangGraph chain."""
-        if self._chain is None and self.model_uri:
-            import mlflow.pyfunc
+    def _get_genai_wrapper(self):
+        """Lazy load GenAI wrapper."""
+        if self._genai_wrapper is None:
+            from rulesmith.models.genai import GenAIWrapper
 
-            self._chain = mlflow.pyfunc.load_model(self.model_uri)
+            self._genai_wrapper = GenAIWrapper(
+                provider=self.provider,
+                model_name=self.model_name,
+                model_uri=self.model_uri,
+                gateway_uri=self.gateway_uri,
+            )
+        return self._genai_wrapper
+
+    def _load_chain(self):
+        """Lazy load LangChain chain from MLflow if model_uri provided."""
+        if self._chain is None and self.model_uri:
+            try:
+                import mlflow.pyfunc
+
+                self._chain = mlflow.pyfunc.load_model(self.model_uri)
+            except Exception:
+                # If MLflow model loading fails, fall back to GenAI wrapper
+                self._chain = None
         return self._chain
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """Execute the GenAI model."""
-        # This will be enhanced in Phase 3 with actual GenAI integration
-        # For now, placeholder implementation
+        import time
+
+        start_time = time.time()
+
+        # Try LangChain chain first if model_uri is provided
         chain = self._load_chain()
         if chain:
-            result = chain.predict(state)
-            if isinstance(result, dict):
-                return result
-            return {"output": result}
-        return {"output": "GenAI node not implemented yet"}
+            try:
+                # Use LangChain chain
+                result = chain.invoke(state) if hasattr(chain, "invoke") else chain.predict(state)
+                if isinstance(result, dict):
+                    output = result
+                else:
+                    output = {"output": result}
+            except Exception:
+                # Fall back to GenAI wrapper
+                chain = None
+
+        # Use GenAI wrapper if no chain or chain failed
+        if chain is None:
+            genai_wrapper = self._get_genai_wrapper()
+
+            # Extract prompt from state
+            prompt = state.get("prompt") or state.get("input") or str(state)
+            if isinstance(prompt, dict):
+                prompt = str(prompt)
+
+            # Merge with params
+            genai_params = self.params.copy()
+            genai_params.update({k: v for k, v in state.items() if k not in ["prompt", "input"]})
+
+            # Invoke GenAI
+            output = genai_wrapper.invoke(prompt, **genai_params)
+
+        # Track execution with MLflow if context supports it
+        latency = time.time() - start_time
+
+        if hasattr(context, "set_model_uri") and self.model_uri:
+            context.set_model_uri(self.model_uri)
+
+        # Log GenAI metrics if context supports it
+        if hasattr(context, "finish_genai"):
+            # Extract token/cost info from output if available
+            tokens = output.get("tokens", {}) if isinstance(output.get("tokens"), dict) else None
+            cost = output.get("cost", output.get("cost_usd"))
+            provider = self.provider
+
+            context.finish_genai(
+                outputs=output,
+                tokens=tokens,
+                cost=cost,
+                latency=latency,
+                provider=provider,
+            )
+
+        return output
 
 
 class HITLNode(Node):

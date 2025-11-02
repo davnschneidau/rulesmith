@@ -27,10 +27,23 @@ class LCNode:
     def invoke(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke the LangChain chain."""
         chain = self._load_chain()
-        result = chain.invoke(inputs)
+
+        # Handle both Runnable and pyfunc models
+        if hasattr(chain, "invoke"):
+            result = chain.invoke(inputs)
+        elif hasattr(chain, "predict"):
+            result = chain.predict(inputs)
+        else:
+            # Try to call directly
+            result = chain(inputs)
+
+        # Normalize output
         if isinstance(result, dict):
             return result
-        return {"output": result}
+        elif isinstance(result, str):
+            return {"output": result}
+        else:
+            return {"output": result}
 
 
 def log_langchain_model(
