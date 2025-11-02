@@ -48,8 +48,7 @@ class ExecutionEngine:
         # Initialize state with payload
         state = payload.copy()
 
-        # Check if context supports MLflow tracking
-        supports_mlflow = hasattr(context, "enable_mlflow") and context.enable_mlflow
+        # Check context capabilities (MLflow integration is optional and handled gracefully)
         supports_node_tracking = hasattr(context, "start_node_execution")
 
         # Execute nodes in topological order

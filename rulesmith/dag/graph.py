@@ -243,20 +243,22 @@ class Rulebook:
         self._nodes[name] = node
         return self
 
-    def connect(
-        self,
-        source: str,
-        target: str,
-        mapping: Optional[Dict[str, str]] = None,
-    ) -> "Rulebook":
+    def connect(self, source: str, target: str, mapping: Optional[Dict[str, str]] = None) -> "Rulebook":
         """
-        Connect two nodes with an edge.
-
+        Connect two nodes. By default, all fields flow through automatically.
+        
         Args:
             source: Source node name
             target: Target node name
-            mapping: Optional field mapping {target_field: source_field}
-
+            mapping: Optional field mapping (rarely needed - only if you want to rename fields)
+        
+        Examples:
+            # Simple connection - all fields flow through
+            rb.connect("node1", "node2")
+            
+            # With field mapping (only if you need to rename)
+            rb.connect("node1", "node2", mapping={"new_name": "old_name"})
+        
         Returns:
             Self for chaining
         """
@@ -265,7 +267,7 @@ class Rulebook:
         if target not in self._nodes:
             raise ValueError(f"Target node '{target}' not found")
 
-        edge = Edge(source=source, target=target, mapping=mapping or {})
+        edge = Edge(source=source, target=target, mapping=mapping)
         self._edges.append(edge)
         return self
 
