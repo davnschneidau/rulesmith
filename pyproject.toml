@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rulesmith"
+version = "0.1.0"
+description = "A rulebook/DAG execution engine with MLflow integration for production ML/AI systems"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Rulesmith Contributors"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "mlflow>=3.0.0",
+    "pydantic>=2.0.0",
+    "networkx>=3.0",
+    "typer>=0.9.0",
+    "astunparse>=1.6.3",
+    "asteval>=0.9.30",
+    "pyyaml>=6.0",
+    "orjson>=3.9.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+langchain = [
+    "langchain>=0.1.0",
+]
+langgraph = [
+    "langgraph>=0.0.20",
+]
+redis = [
+    "redis>=5.0.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.0",
+]
+all = [
+    "rulesmith[langchain,langgraph,redis,postgres]",
+]
+
+[project.scripts]
+rulesmith = "rulesmith.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rulesmith*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
