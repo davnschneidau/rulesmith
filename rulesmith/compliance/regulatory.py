@@ -47,7 +47,13 @@ class ComplianceChecker:
 
         Returns:
             Compliance check result
+
+        Raises:
+            ValueError: If decision_id is empty
         """
+        if not decision_id:
+            raise ValueError("decision_id cannot be empty")
+
         issues = []
 
         # Check for reason codes (required for adverse actions)
@@ -65,6 +71,12 @@ class ComplianceChecker:
                     issues.append(f"Reason code '{code.code}' missing description")
 
         compliant = len(issues) == 0
+        
+        if not compliant:
+            logger.warning(
+                f"Explainability compliance check failed for decision {decision_id}",
+                extra={"issues": issues, "decision_id": decision_id},
+            )
 
         return {
             "check": "explainability",

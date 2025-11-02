@@ -5,6 +5,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from rulesmith.governance.audit import AuditLogger, audit_logger
+from rulesmith.utils.logging import get_logger
+
+logger = get_logger("lifecycle")
 
 
 class ProposalStatus(str, Enum):
@@ -152,21 +155,51 @@ class ProposalRegistry:
 
     def register(self, proposal: RuleProposal) -> None:
         """Register a proposal."""
+        if not proposal.proposal_id:
+            raise ValueError("Proposal must have a valid proposal_id")
+        if proposal.proposal_id in self._proposals:
+            logger.warning(f"Overwriting existing proposal: {proposal.proposal_id}")
         self._proposals[proposal.proposal_id] = proposal
 
     def get(self, proposal_id: str) -> Optional[RuleProposal]:
-        """Get a proposal by ID."""
+        """
+        Get a proposal by ID.
+        
+        Args:
+            proposal_id: Proposal ID
+            
+        Returns:
+            Proposal if found, None otherwise
+        """
+        if not proposal_id:
+            raise ValueError("proposal_id cannot be empty")
         return self._proposals.get(proposal_id)
 
     def submit_review(self, review: ProposalReview) -> None:
-        """Submit a review for a proposal."""
+        """
+        Submit a review for a proposal.
+        
+        Args:
+            review: Proposal review
+            
+        Raises:
+            ValueError: If proposal_id is invalid or proposal not found
+        """
+        if not review.proposal_id:
+            raise ValueError("Review must have a valid proposal_id")
+        
         if review.proposal_id not in self._reviews:
             self._reviews[review.proposal_id] = []
         self._reviews[review.proposal_id].append(review)
 
         # Update proposal status based on review
         proposal = self._proposals.get(review.proposal_id)
-        if proposal:
+        if not proposal:
+            logger.warning(
+                f"Review submitted for unknown proposal: {review.proposal_id}",
+                extra={"reviewer": review.reviewer},
+            )
+        else:
             if review.approved:
                 proposal.status = ProposalStatus.APPROVED
             else:
