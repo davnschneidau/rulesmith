@@ -47,13 +47,11 @@ print(result)  # {"eligible": True, "score": 550.0}
 ### A/B Testing
 
 ```python
-from rulesmith.io.ser import ABArm
+# Simple 50/50 split
+rb.add_split("experiment", {"variant_a": 0.5, "variant_b": 0.5})
 
-arms = [
-    ABArm(node="variant_a", weight=0.5),
-    ABArm(node="variant_b", weight=0.5),
-]
-rb.add_fork("ab_test", arms, policy="thompson_sampling")
+# Adaptive bandit (learns which variant is better)
+rb.add_split("bandit", {"a": 1.0, "b": 1.0}, policy="thompson")
 ```
 
 ### Guardrails

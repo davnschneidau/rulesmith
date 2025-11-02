@@ -92,15 +92,17 @@ Rulesmith integrates deeply with MLflow 3:
 
 ## Advanced Features
 
-### A/B Testing with Bandits
+### A/B Testing
 
 ```python
-from rulesmith.ab.policies import ThompsonSamplingPolicy
-from rulesmith.io.ser import ABArm
+# Simple 50/50 split
+rb.add_split("experiment", {"control": 0.5, "treatment": 0.5})
 
-policy = ThompsonSamplingPolicy()
-arms = [ABArm(node="variant_a", weight=1.0), ABArm(node="variant_b", weight=1.0)]
-rb.add_fork("ab_test", arms, policy_instance=policy)
+# Weighted split (70/30)
+rb.add_split("test", {"variant_a": 0.7, "variant_b": 0.3})
+
+# Adaptive bandit (automatically optimizes)
+rb.add_split("bandit_test", {"a": 1.0, "b": 1.0}, policy="thompson")
 ```
 
 ### Guardrails
