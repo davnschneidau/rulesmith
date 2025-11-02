@@ -69,7 +69,12 @@ class RuleNode(Node):
 
 
 class ForkNode(Node):
-    """Node that performs A/B testing traffic splitting."""
+    """
+    Node that performs A/B testing traffic splitting.
+    
+    Also known as a "split" or "AB test" node.
+    Routes traffic to different variants based on a policy.
+    """
 
     def __init__(
         self,
@@ -146,8 +151,12 @@ class ForkNode(Node):
             except Exception:
                 pass  # Ignore MLflow errors
 
-        # Return selection info
+        # Return clear selection info - make it easy to see what happened
         return {
+            "selected_variant": selected_arm.node,  # Simple, clear name
+            "ab_test": self.name,
+            "ab_policy": self.policy,
+            # Keep backward compatibility
             "_ab_selection": {
                 "fork": self.name,
                 "arm": selected_arm.node,

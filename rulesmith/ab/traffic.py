@@ -65,25 +65,29 @@ def pick_arm(
     if identity:
         ctx["identity"] = identity
 
-    if policy == "hash" or policy == "deterministic":
+    # Support both technical names and simpler aliases
+    policy_lower = policy.lower()
+    
+    if policy_lower in ("hash", "deterministic", "consistent"):
         policy_instance = HashPolicy()
-    elif policy == "random":
+    elif policy_lower == "random":
         seed = ctx.get("seed")
         policy_instance = RandomPolicy(seed=seed)
-    elif policy == "thompson_sampling":
+    elif policy_lower in ("thompson", "thompson_sampling", "thompsonsampling"):
         arms_history = ctx.get("arms_history")
         policy_instance = ThompsonSamplingPolicy(arms_history=arms_history)
-    elif policy == "ucb1" or policy == "ucb":
+    elif policy_lower in ("ucb", "ucb1"):
         arms_history = ctx.get("arms_history")
         policy_instance = UCBPolicy(arms_history=arms_history)
-    elif policy == "epsilon_greedy" or policy.startswith("epsilon"):
+    elif policy_lower.startswith("epsilon") or policy_lower == "epsilon_greedy":
         epsilon = ctx.get("epsilon", 0.1)
         arms_history = ctx.get("arms_history")
         policy_instance = EpsilonGreedyPolicy(epsilon=epsilon, arms_history=arms_history)
     else:
         raise ValueError(
             f"Unknown policy: {policy}. "
-            "Supported: 'hash', 'random', 'thompson_sampling', 'ucb1', 'epsilon_greedy'"
+            "Supported: 'hash' (or 'deterministic'), 'random', 'thompson' (or 'thompson_sampling'), "
+            "'ucb' (or 'ucb1'), 'epsilon' (or 'epsilon_greedy')"
         )
 
     return policy_instance.select_arm(arms, ctx)

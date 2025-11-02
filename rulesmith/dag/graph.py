@@ -66,6 +66,59 @@ class Rulebook:
 
         return self
 
+    def add_split(
+        self,
+        name: str,
+        variants: Dict[str, float],
+        policy: Optional[str] = "hash",
+        policy_instance: Optional[Any] = None,
+    ) -> "Rulebook":
+        """
+        Add an A/B test split node. This is the simple, intuitive way to do A/B testing.
+        
+        Args:
+            name: Split node name (e.g., "experiment_1")
+            variants: Dictionary of variant names to their weights/percentages
+                     (e.g., {"control": 0.5, "treatment": 0.5})
+            policy: Traffic splitting policy - simple names:
+                   - "hash" (default): Deterministic, same user gets same variant
+                   - "random": Random allocation
+                   - "thompson": Thompson Sampling bandit (adaptive)
+                   - "ucb": Upper Confidence Bound bandit
+                   - "epsilon": Epsilon-greedy bandit
+            policy_instance: Advanced: Custom policy instance (rarely needed)
+        
+        Examples:
+            # Simple 50/50 split
+            rb.add_split("experiment", {"control": 0.5, "treatment": 0.5})
+            
+            # 70/30 split
+            rb.add_split("test", {"variant_a": 0.7, "variant_b": 0.3})
+            
+            # Three-way test
+            rb.add_split("multi_test", {"a": 0.33, "b": 0.33, "c": 0.34})
+            
+            # With adaptive bandit
+            rb.add_split("bandit_test", {"a": 1.0, "b": 1.0}, policy="thompson")
+        
+        Returns:
+            Self for chaining
+        """
+        # Convert simple dict to ABArm list for backward compatibility
+        from rulesmith.io.ser import ABArm
+        
+        arms = [ABArm(node=variant_name, weight=weight) for variant_name, weight in variants.items()]
+        
+        node = ForkNode(
+            name,
+            arms,
+            policy=policy,
+            policy_instance=policy_instance,
+            track_metrics=True,
+        )
+        self._nodes[name] = node
+        return self
+    
     def add_fork(
         self,
         name: str,
@@ -75,15 +128,17 @@ class Rulebook:
         track_metrics: bool = True,
     ) -> "Rulebook":
         """
-        Add a fork node for A/B testing.
-
+        Add a fork node for A/B testing (advanced API).
+        
+        Note: For most users, use add_split() instead - it's simpler!
+        
         Args:
             name: Fork node name
-            arms: List of A/B arms
-            policy: Traffic splitting policy ("hash", "random", "thompson_sampling", "ucb1", "epsilon_greedy")
-            policy_instance: Optional TrafficPolicy instance (overrides policy string)
-            track_metrics: Whether to track A/B metrics in MLflow
-
+            arms: List of A/B arms (ABArm objects)
+            policy: Traffic splitting policy
+            policy_instance: Optional TrafficPolicy instance
+            track_metrics: Whether to track metrics
+        
         Returns:
             Self for chaining
         """
