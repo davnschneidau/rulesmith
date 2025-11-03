@@ -357,30 +357,18 @@ class Rulebook:
 
         node = self._nodes[node_name]
 
-        # Support GuardPack
-        from rulesmith.guardrails.packs import GuardPack
-
-        if isinstance(guard_policy, GuardPack):
-            guard_policy = guard_policy.to_policy(when_node=node_name)
+        # Convert guard function to GuardPolicy if needed
+        if callable(guard_policy) and not isinstance(guard_policy, GuardPolicy):
+            # Assume it's a guard function
+            guard_policy = GuardPolicy(
+                name=getattr(guard_policy, "_guard_name", guard_policy.__name__),
+                checks=[guard_policy.__name__],
+            )
 
         # Store guard policy
         if not hasattr(node, "_guard_policies"):
             node._guard_policies = []
         node._guard_policies.append(guard_policy)
-
-        # Register default guards if not already done (deprecated - use LangChain guardrails)
-        try:
-            register_default_guards(guard_executor)
-        except Exception:
-            # If register_default_guards fails (e.g., deprecated), that's okay
-            # Users should migrate to LangChain guardrails
-            pass
-
-        # Legacy support for guard functions
-        if guard_fn:
-            if not hasattr(node, "_guards"):
-                node._guards = []
-            node._guards.append(guard_fn)
 
         return self
 
