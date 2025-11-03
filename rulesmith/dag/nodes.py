@@ -1,11 +1,9 @@
 """Node types for the DAG execution engine."""
 
-import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from rulesmith.guardrails.execution import guard_executor
-from rulesmith.io.ser import ABArm
 
 
 class Node(ABC):
@@ -69,108 +67,6 @@ class RuleNode(Node):
         return result
 
 
-class ForkNode(Node):
-    """
-    DEPRECATED: Use fork() function instead of ForkNode.
-    
-    Node that performs A/B testing traffic splitting.
-    
-    This class is deprecated. Use the fork() function from rulesmith.dag.functions
-    instead for better integration with the execution engine.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        arms: List[ABArm],
-        policy: Optional[str] = "hash",
-        policy_instance: Optional[Any] = None,
-        track_metrics: bool = True,
-    ):
-        """
-        Initialize ForkNode.
-
-        Args:
-            name: Node name
-            arms: List of A/B arms
-            policy: Policy name (hash, random, thompson_sampling, ucb1, epsilon_greedy)
-            policy_instance: Optional TrafficPolicy instance
-            track_metrics: Whether to track A/B metrics for MLflow
-        """
-        warnings.warn(
-            "ForkNode is deprecated. Use fork() function from rulesmith.dag.functions instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(name, "fork")
-        self.arms = arms
-        self.policy = policy or "hash"
-        self.policy_instance = policy_instance
-        self.track_metrics = track_metrics
-
-    def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Select an arm and route traffic."""
-        from rulesmith.dag.functions import fork
-
-        identity = getattr(context, "identity", None) or state.get("identity")
-        seed = getattr(context, "seed", None)
-
-        # Use fork function internally
-        result = fork(
-            self.arms,
-            policy=self.policy,
-            policy_instance=self.policy_instance,
-            identity=identity,
-            seed=seed,
-            track_metrics=self.track_metrics,
-            context=context,
-        )
-        
-        # Update result with node name
-        result["ab_test"] = self.name
-        result["_ab_selection"] = {
-            "fork": self.name,
-            "arm": result["selected_variant"],
-            "policy": self.policy,
-        }
-        
-        return result
-
-
-class GateNode(Node):
-    """
-    DEPRECATED: Use gate() function instead of GateNode.
-    
-    Node that conditionally routes based on an expression.
-    
-    This class is deprecated. Use the gate() function from rulesmith.dag.functions
-    instead for better integration with the execution engine.
-    """
-
-    def __init__(self, name: str, condition: str):
-        warnings.warn(
-            "GateNode is deprecated. Use gate() function from rulesmith.dag.functions instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(name, "gate")
-        self.condition = condition
-
-    def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Evaluate condition and route accordingly."""
-        from rulesmith.dag.functions import gate
-
-        # Use gate function internally
-        result = gate(self.condition, state, context)
-        
-        # Store result in state for backward compatibility
-        state["_gate_result"] = {self.name: result.get("passed", False)}
-        if "error" in result:
-            state["_gate_error"] = {self.name: result["error"]}
-        
-        return result
-
-
 class ModelNode(Node):
     """
     Node that loads and executes an MLflow model or LangChain model.
@@ -229,10 +125,6 @@ class ModelNode(Node):
             context.set_model_uri(self.model_uri)
 
         return result
-
-
-# Backward compatibility alias
-BYOMNode = ModelNode
 
 
 class LLMNode(Node):
@@ -427,26 +319,4 @@ class LLMNode(Node):
             )
 
         return output
-
-
-# Backward compatibility alias
-GenAINode = LLMNode
-
-
-# HITLNode is now in rulesmith.hitl.node module
-# Import it here for backwards compatibility
-# Note: HITLNode is deprecated - use hitl() function from rulesmith.dag.functions instead
-from rulesmith.hitl.node import HITLNode as _HITLNodeBase
-
-
-class HITLNode(_HITLNodeBase):
-    """DEPRECATED: Use hitl() function instead of HITLNode."""
-    
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "HITLNode is deprecated. Use hitl() function from rulesmith.dag.functions instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
 

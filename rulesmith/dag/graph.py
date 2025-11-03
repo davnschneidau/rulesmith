@@ -154,49 +154,7 @@ class Rulebook:
         self._nodes[name] = node
         return self
 
-    def add_gate(self, name: str, condition: str) -> "Rulebook":
-        """
-        Add a gate node for conditional routing.
 
-        Args:
-            name: Gate node name
-            condition: Expression to evaluate (e.g., "age >= 18")
-
-        Returns:
-            Self for chaining
-        """
-        node = GateNode(name, condition)
-        self._nodes[name] = node
-        return self
-
-    def add_byom(
-        self,
-        name: str,
-        model_uri: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> "Rulebook":
-        """
-        Add a BYOM (Bring Your Own Model) node.
-        
-        DEPRECATED: Use add_model() instead.
-
-        Args:
-            name: Node name
-            model_uri: MLflow model URI
-            params: Optional parameters
-
-        Returns:
-            Self for chaining
-        """
-        import warnings
-        warnings.warn(
-            "add_byom() is deprecated. Use add_model() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        node = ModelNode(name, model_uri=model_uri, params=params)
-        self._nodes[name] = node
-        return self
     
     def add_model(
         self,
@@ -230,48 +188,6 @@ class Rulebook:
         self._nodes[name] = node
         return self
 
-    def add_genai(
-        self,
-        name: str,
-        model_uri: Optional[str] = None,
-        provider: Optional[str] = None,
-        model_name: Optional[str] = None,
-        gateway_uri: Optional[str] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> "Rulebook":
-        """
-        Add a GenAI/LLM node.
-        
-        DEPRECATED: Use add_llm() instead.
-
-        Args:
-            name: Node name
-            model_uri: Optional MLflow model URI
-            provider: Optional provider name (openai, anthropic, etc.)
-            model_name: Optional model name
-            gateway_uri: Optional MLflow AI Gateway URI
-            params: Optional parameters
-
-        Returns:
-            Self for chaining
-        """
-        import warnings
-        warnings.warn(
-            "add_genai() is deprecated. Use add_llm() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        node = LLMNode(
-            name,
-            model_uri=model_uri,
-            provider=provider,
-            model_name=model_name,
-            gateway_uri=gateway_uri,
-            params=params,
-        )
-        self._nodes[name] = node
-        return self
-    
     def add_llm(
         self,
         name: str,
@@ -348,6 +264,8 @@ class Rulebook:
     ) -> "Rulebook":
         """
         Add a LangChain chain node.
+        
+        DEPRECATED: Use add_model() with model_uri pointing to LangChain model instead.
 
         Args:
             name: Node name
@@ -357,9 +275,14 @@ class Rulebook:
         Returns:
             Self for chaining
         """
-        node = LangChainNode(name, chain_model_uri, params=params)
-        self._nodes[name] = node
-        return self
+        import warnings
+        warnings.warn(
+            "add_langchain() is deprecated. Use add_model() with model_uri instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Use ModelNode which can handle LangChain models
+        return self.add_model(name, model_uri=chain_model_uri, params=params)
 
     def add_langgraph(
         self,
@@ -369,6 +292,8 @@ class Rulebook:
     ) -> "Rulebook":
         """
         Add a LangGraph graph node.
+        
+        DEPRECATED: Use add_model() with model_uri pointing to LangGraph model instead.
 
         Args:
             name: Node name
@@ -378,9 +303,14 @@ class Rulebook:
         Returns:
             Self for chaining
         """
-        node = LangGraphNode(name, graph_model_uri, params=params)
-        self._nodes[name] = node
-        return self
+        import warnings
+        warnings.warn(
+            "add_langgraph() is deprecated. Use add_model() with model_uri instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Use ModelNode which can handle LangGraph models
+        return self.add_model(name, model_uri=graph_model_uri, params=params)
 
     def connect(
         self,
@@ -510,12 +440,12 @@ class Rulebook:
                 if hasattr(node.rule_func, "_rule_spec"):
                     rule_spec = node.rule_func._rule_spec
                     node_spec.rule_ref = rule_spec.name
-            elif isinstance(node, (ModelNode, BYOMNode)):  # BYOMNode is alias
+            elif isinstance(node, ModelNode):
                 node_spec.model_uri = node.model_uri
                 # Note: langchain_model cannot be serialized, must be provided at runtime
                 if node.langchain_model:
                     node_spec.params["_has_langchain_model"] = True
-            elif isinstance(node, (LLMNode, GenAINode)):  # GenAINode is alias
+            elif isinstance(node, LLMNode):
                 node_spec.model_uri = node.model_uri
                 if hasattr(node, "provider") and node.provider:
                     node_spec.params["provider"] = node.provider
