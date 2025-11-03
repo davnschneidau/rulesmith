@@ -67,7 +67,7 @@ Add a rule node to the rulebook.
 
 **Returns:** Self for chaining
 
-##### `add_model(name, model_uri=None, langchain_model=None, params=None)`
+##### `add_model(name, model_uri=None, langchain_model=None, params=None, metrics=None)`
 
 Add a model node (MLflow or LangChain model).
 
@@ -76,12 +76,26 @@ Add a model node (MLflow or LangChain model).
 - `model_uri` (str, optional): MLflow model URI
 - `langchain_model` (Any, optional): Direct LangChain model/chain instance
 - `params` (Dict[str, Any], optional): Additional parameters
+- `metrics` (List[Callable], optional): List of rule functions to evaluate on output (guardrails)
 
 **Returns:** Self for chaining
 
+**Examples:**
+```python
+# MLflow model
+rb.add_model("my_model", model_uri="models:/my_model/1")
+
+# LangChain model with metrics
+@rule(name="check_output", inputs=["output"], outputs=["valid"])
+def check_output(output: str) -> dict:
+    return {"valid": len(output) > 0}
+
+rb.add_model("llm_node", langchain_model=llm, metrics=[check_output])
+```
+
 **Note:** Gate functionality is now handled via the `gate()` function during execution, not as a node class.
 
-##### `add_llm(name, model_uri=None, provider=None, model_name=None, gateway_uri=None, params=None)`
+##### `add_llm(name, model_uri=None, provider=None, model_name=None, gateway_uri=None, params=None, metrics=None)`
 
 Add an LLM node with multi-provider support.
 
@@ -92,8 +106,22 @@ Add an LLM node with multi-provider support.
 - `model_name` (str, optional): Model name (e.g., "gpt-4", "claude-3", "gemini-pro")
 - `gateway_uri` (str, optional): MLflow Gateway URI
 - `params` (Dict[str, Any], optional): Provider-specific parameters
+- `metrics` (List[Callable], optional): List of rule functions to evaluate on output (guardrails)
 
 **Returns:** Self for chaining
+
+**Examples:**
+```python
+# Basic LLM node
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+
+# With metrics (guardrails)
+@rule(name="check_toxicity", inputs=["output"], outputs=["is_toxic"])
+def check_toxicity(output: str) -> dict:
+    return {"is_toxic": "hate" in output.lower()}
+
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4", metrics=[check_toxicity])
+```
 
 **Note:** `add_byom()` and `add_genai()` are deprecated. Use `add_model()` and `add_llm()` instead.
 
