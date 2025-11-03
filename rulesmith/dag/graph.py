@@ -3,20 +3,14 @@
 from typing import Any, Callable, Dict, List, Optional
 
 from rulesmith.dag.execution import ExecutionEngine
-from rulesmith.dag.langchain_node import LangChainNode
-from rulesmith.dag.langgraph_node import LangGraphNode
 from rulesmith.dag.nodes import (
-    BYOMNode,  # Deprecated alias
-    ForkNode,  # Deprecated - use fork() function
-    GateNode,  # Deprecated - use gate() function
-    GenAINode,  # Deprecated alias
     LLMNode,
     ModelNode,
     Node,
     RuleNode,
 )
-from rulesmith.hitl.node import HITLNode
 from rulesmith.dag.registry import rule_registry
+from rulesmith.guardrails.policy import GuardPolicy
 from rulesmith.io.ser import ABArm, Edge, NodeSpec, RulebookSpec
 
 
@@ -121,38 +115,6 @@ class Rulebook:
         self._nodes[name] = node
         return self
     
-    def add_fork(
-        self,
-        name: str,
-        arms: List[ABArm],
-        policy: Optional[str] = "hash",
-        policy_instance: Optional[Any] = None,
-        track_metrics: bool = True,
-    ) -> "Rulebook":
-        """
-        Add a fork node for A/B testing (advanced API).
-        
-        Note: For most users, use add_split() instead - it's simpler!
-        
-        Args:
-            name: Fork node name
-            arms: List of A/B arms (ABArm objects)
-            policy: Traffic splitting policy
-            policy_instance: Optional TrafficPolicy instance
-            track_metrics: Whether to track metrics
-        
-        Returns:
-            Self for chaining
-        """
-        node = ForkNode(
-            name,
-            arms,
-            policy=policy,
-            policy_instance=policy_instance,
-            track_metrics=track_metrics,
-        )
-        self._nodes[name] = node
-        return self
 
 
     
@@ -379,15 +341,13 @@ class Rulebook:
         self,
         node_name: str,
         guard_policy: Any,
-        guard_fn: Optional[Callable] = None,
     ) -> "Rulebook":
         """
         Attach a guardrail policy to a node.
 
         Args:
             node_name: Node name
-            guard_policy: GuardPolicy instance or GuardPack
-            guard_fn: Optional guard function (deprecated, use guard_policy)
+            guard_policy: GuardPolicy instance or guard function
 
         Returns:
             Self for chaining
@@ -456,14 +416,8 @@ class Rulebook:
                 # Store all params for provider-specific config
                 if node.params:
                     node_spec.params.update(node.params)
-            elif isinstance(node, LangChainNode):
-                node_spec.model_uri = node.chain_model_uri
-            elif isinstance(node, LangGraphNode):
-                node_spec.model_uri = node.graph_model_uri
-            elif isinstance(node, ForkNode):
-                node_spec.ab_arms = node.arms
-            elif isinstance(node, GateNode):
-                node_spec.condition = node.condition
+            # LangChain and LangGraph models are now handled by ModelNode
+            # No need for separate node type checks
 
             nodes.append(node_spec)
 
