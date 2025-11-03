@@ -302,20 +302,26 @@ Context for tracking individual node executions.
 
 ## Model Integration
 
-### `BYOMRef`
+### `BYOMRef` / `ModelNode`
 
-Reference to an MLflow model for BYOM.
+Reference to an MLflow model or LangChain model.
 
 ```python
 from rulesmith.models.mlflow_byom import BYOMRef
 
-byom = BYOMRef("models:/my_model/1")
-result = byom.predict({"feature": 123})
+# For direct model loading
+model_ref = BYOMRef("models:/my_model/1")
+result = model_ref.predict({"feature": 123})
+
+# Or use ModelNode in rulebook
+rb.add_model("my_model", model_uri="models:/my_model/1")
 ```
 
 **Methods:**
 - `load()`: Load the model
 - `predict(inputs) -> Dict[str, Any]`: Run prediction
+
+**Note:** `BYOMRef` is still available for direct model access, but rulebooks should use `add_model()` instead of `add_byom()`.
 
 ---
 
