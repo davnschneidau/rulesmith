@@ -30,7 +30,7 @@ class LineageGraph:
                     node_ref.code_hash = rule_spec.code_hash
                     node_ref.signature = f"{rule_spec.name}({', '.join(rule_spec.inputs)}) -> {', '.join(rule_spec.outputs)}"
 
-            elif node.kind in ("byom", "llm", "langchain", "langgraph") and node.model_uri:
+            elif node.kind in ("model", "byom", "llm", "langchain", "langgraph") and node.model_uri:
                 node_ref.uri = node.model_uri
                 # Could fetch model signature from MLflow
 

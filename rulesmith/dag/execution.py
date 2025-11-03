@@ -126,8 +126,8 @@ class ExecutionEngine:
                             if rule_spec.code_hash:
                                 node_ctx.set_code_hash(rule_spec.code_hash)
 
-                    # Try to get model URI from BYOM/GenAI nodes
-                    if node.kind in ("byom", "llm") and hasattr(node, "model_uri"):
+                    # Try to get model URI from Model/LLM nodes
+                    if node.kind in ("model", "byom", "llm") and hasattr(node, "model_uri"):
                         if node.model_uri:
                             node_ctx.set_model_uri(node.model_uri)
 

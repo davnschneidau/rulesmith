@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class NodeRef(BaseModel):
     """Reference to a node for lineage tracking."""
 
-    kind: str = Field(..., description="Node kind: rule|fork|gate|byom|llm|hitl")
+    kind: str = Field(..., description="Node kind: rule|fork|gate|model|byom|llm|hitl")
     name: str = Field(..., description="Node name")
     uri: Optional[str] = Field(None, description="Model URI or code location")
     code_hash: Optional[str] = Field(None, description="SHA256 hash of code")
@@ -52,10 +52,10 @@ class NodeSpec(BaseModel):
     name: str = Field(..., description="Node name")
     kind: str = Field(
         ...,
-        description="Node type: rule|fork|gate|byom|llm|hitl",
+        description="Node type: rule|fork|gate|model|byom|llm|hitl",
     )
     rule_ref: Optional[str] = Field(None, description="Reference to rule name if kind=rule")
-    model_uri: Optional[str] = Field(None, description="Model URI if kind=byom|llm")
+    model_uri: Optional[str] = Field(None, description="Model URI if kind=model|byom|llm")
     ab_arms: Optional[List[ABArm]] = Field(None, description="A/B arms if kind=fork")
     condition: Optional[str] = Field(None, description="Condition expression if kind=gate")
     params: Dict[str, Any] = Field(
