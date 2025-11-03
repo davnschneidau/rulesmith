@@ -54,12 +54,18 @@ rb.add_split("experiment", {"variant_a": 0.5, "variant_b": 0.5})
 rb.add_split("bandit", {"a": 1.0, "b": 1.0}, policy="thompson")
 ```
 
-### Guardrails
+### Guardrails (Rule-based Metrics)
+
+Guardrails are defined as rule functions that evaluate node outputs:
 
 ```python
-from rulesmith.guardrails.langchain_adapter import create_pii_guard_from_langchain
+from rulesmith import rule
 
-rb.attach_guard("node_name", create_pii_guard_from_langchain())
+@rule(name="check_pii", inputs=["output"], outputs=["has_pii"])
+def check_pii(output: str) -> dict:
+    return {"has_pii": "@" in output}
+
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4", metrics=[check_pii])
 ```
 
 ### MLflow Integration

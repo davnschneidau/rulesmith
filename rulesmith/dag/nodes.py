@@ -3,8 +3,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
-from rulesmith.guardrails.execution import guard_executor
-
 
 class Node(ABC):
     """Base class for all node types."""

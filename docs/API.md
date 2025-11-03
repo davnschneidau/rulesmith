@@ -122,17 +122,25 @@ Add a Human-in-the-Loop node.
 
 **Returns:** Self for chaining
 
-##### `attach_guard(node_name, guard_policy)`
+##### `add_metrics(node_name, metrics)`
 
-Attach a guardrail policy to a node.
+Add metrics (guardrails) to a node. Metrics are rule functions that evaluate the node's output.
 
 **Parameters:**
-- `node_name` (str): Node name
-- `guard_policy` (GuardPolicy): Guard policy instance or guard function
+- `node_name` (str): Node name (must be LLM or Model node)
+- `metrics` (List[Callable]): List of rule functions to evaluate on output
 
 **Returns:** Self for chaining
 
-**Note:** Guard functions are automatically converted to GuardPolicy instances. Use LangChain guardrails for production use cases.
+**Examples:**
+```python
+@rule(name="check_pii", inputs=["output"], outputs=["has_pii"])
+def check_pii(output: str) -> dict:
+    return {"has_pii": "@" in output}
+
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+rb.add_metrics("gpt4", [check_pii])
+```
 
 ##### `connect(source, target, mapping=None)`
 
@@ -429,51 +437,59 @@ selected = pick_arm(arms, identity="user123", policy="thompson_sampling")
 
 ---
 
-## Guardrails
+## Guardrails (Rule-based Metrics)
 
-### `GuardPolicy`
+Guardrails are defined as rule functions that evaluate the output of LLM/Model nodes. They are added as metrics to nodes and automatically evaluated after node execution.
 
-Guardrail policy definition.
+### Defining Metrics
 
-```python
-from rulesmith.guardrails.policy import GuardPolicy, GuardAction
-
-policy = GuardPolicy(
-    name="pii_check",
-    checks=["pii_email", "pii_phone"],
-    on_fail=GuardAction.BLOCK,
-)
-```
-
-**Parameters:**
-- `name` (str): Policy name
-- `checks` (List[str]): List of guard check names
-- `on_fail` (GuardAction): Action on failure
-- `override_template` (Dict[str, Any], optional): Override template
-
----
-
-### LangChain Guardrails
-
-Integration with LangChain's guardrail ecosystem.
+Metrics are rule functions that take the node output and return evaluation results:
 
 ```python
-from rulesmith.guardrails.langchain_adapter import (
-    create_pii_guard_from_langchain,
-    create_toxicity_guard_from_langchain,
-    create_moderation_guard_from_langchain,
-)
+from rulesmith import rule
 
-rb.attach_guard("llm_node", create_pii_guard_from_langchain())
-rb.attach_guard("llm_node", create_toxicity_guard_from_langchain())
+@rule(name="check_pii", inputs=["output"], outputs=["has_pii"])
+def check_pii(output: str) -> dict:
+    """Check if output contains PII."""
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    has_email = bool(re.search(email_pattern, output))
+    return {"has_pii": has_email}
+
+@rule(name="check_toxicity", inputs=["output"], outputs=["is_toxic"])
+def check_toxicity(output: str) -> dict:
+    """Check if output contains toxic content."""
+    toxic_words = ["hate", "violence"]
+    return {"is_toxic": any(word in output.lower() for word in toxic_words)}
 ```
 
-**Available Guards:**
-- `create_pii_guard_from_langchain()`: PII detection using LangChain
-- `create_toxicity_guard_from_langchain()`: Toxicity detection using LangChain
-- `create_moderation_guard_from_langchain()`: Content moderation using LangChain
+### Adding Metrics to Nodes
 
-**Note:** The deprecated `GuardPack` and built-in guard packs have been removed. Use LangChain guardrails for production use cases.
+Metrics can be added when creating a node or separately:
+
+```python
+# Add metrics when creating node
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4", metrics=[check_pii, check_toxicity])
+
+# Or add metrics separately
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+rb.add_metrics("gpt4", [check_pii, check_toxicity])
+```
+
+### Metric Results
+
+Metric results are stored in the node's output under `_metrics`:
+
+```python
+result = rb.run({"prompt": "Hello"})
+# result["_metrics"] contains:
+# {
+#     "check_pii": {"value": False, "message": None},
+#     "check_toxicity": {"value": False, "message": None}
+# }
+```
+
+Metrics are automatically logged to MLflow if enabled.
 
 ---
 

@@ -105,14 +105,34 @@ rb.add_split("test", {"variant_a": 0.7, "variant_b": 0.3})
 rb.add_split("bandit_test", {"a": 1.0, "b": 1.0}, policy="thompson")
 ```
 
-### Guardrails
+### Guardrails (Rule-based Metrics)
+
+Guardrails are defined as rule functions that evaluate the output of LLM/Model nodes:
 
 ```python
-from rulesmith.guardrails.langchain_adapter import create_pii_guard_from_langchain, create_toxicity_guard_from_langchain
+from rulesmith import rule
 
-# Use LangChain guardrails (recommended)
-rb.attach_guard("llm_node", create_pii_guard_from_langchain())  # Block PII
-rb.attach_guard("llm_node", create_toxicity_guard_from_langchain())  # Block toxicity
+# Define custom guardrails as rules
+@rule(name="check_pii", inputs=["output"], outputs=["has_pii"])
+def check_pii(output: str) -> dict:
+    """Check if output contains PII."""
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    has_email = bool(re.search(email_pattern, output))
+    return {"has_pii": has_email}
+
+@rule(name="check_toxicity", inputs=["output"], outputs=["is_toxic"])
+def check_toxicity(output: str) -> dict:
+    """Check if output contains toxic content."""
+    toxic_words = ["hate", "violence", "harassment"]
+    return {"is_toxic": any(word in output.lower() for word in toxic_words)}
+
+# Add metrics to LLM node
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4", metrics=[check_pii, check_toxicity])
+
+# Or add metrics separately
+rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+rb.add_metrics("gpt4", [check_pii, check_toxicity])
 ```
 
 ### Human-in-the-Loop
