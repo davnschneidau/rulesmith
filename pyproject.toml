@@ -37,9 +37,36 @@ dependencies = [
 [project.optional-dependencies]
 langchain = [
     "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
 ]
 langchain-guardrails = [
     "langchain-core>=0.1.0",  # For guardrails support
+]
+# Provider-specific packages (install as needed)
+langchain-openai = [
+    "langchain-openai>=0.1.0",
+]
+langchain-anthropic = [
+    "langchain-anthropic>=0.1.0",
+]
+langchain-google = [
+    "langchain-google-genai>=0.1.0",
+    "langchain-google-vertexai>=0.1.0",
+]
+langchain-cohere = [
+    "langchain-cohere>=0.1.0",
+]
+langchain-mistralai = [
+    "langchain-mistralai>=0.1.0",
+]
+langchain-aws = [
+    "langchain-aws>=0.1.0",  # Bedrock
+]
+langchain-groq = [
+    "langchain-groq>=0.1.0",
+]
+langchain-ollama = [
+    "langchain-ollama>=0.1.0",
 ]
 langgraph = [
     "langgraph>=0.0.20",
@@ -55,6 +82,10 @@ all = [
 ]
 guardrails = [
     "rulesmith[langchain-guardrails]",
+]
+# Multi-model support (includes common providers)
+multimodel = [
+    "rulesmith[langchain-openai,langchain-anthropic,langchain-google]",
 ]
 
 [project.scripts]
