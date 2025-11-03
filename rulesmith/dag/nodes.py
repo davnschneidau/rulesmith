@@ -301,8 +301,60 @@ class LLMNode(Node):
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """Execute the LLM model."""
         import time
+        from rulesmith.performance.llm_cost_guardrails import llm_cost_guardrails
 
         start_time = time.time()
+
+        # Check for cached response
+        prompt = state.get("prompt") or state.get("input") or str(state)
+        if isinstance(prompt, dict):
+            prompt = str(prompt)
+        
+        model_name = self.model_name or "unknown"
+        cached_entry = llm_cost_guardrails.get_cached_response(prompt, model_name)
+        
+        if cached_entry:
+            # Return cached response
+            output = {
+                "output": cached_entry.response,
+                "tokens": cached_entry.tokens,
+                "cost": cached_entry.cost,
+                "cached": True,
+            }
+            latency = time.time() - start_time
+            
+            # Track execution with MLflow if context supports it
+            if hasattr(context, "set_model_uri") and self.model_uri:
+                context.set_model_uri(self.model_uri)
+            
+            if hasattr(context, "finish_genai"):
+                context.finish_genai(
+                    tokens=cached_entry.tokens,
+                    cost=cached_entry.cost,
+                    latency=latency,
+                    provider=self.provider,
+                )
+            
+            return output
+        
+        # Check token budget if enabled
+        tenant_id = getattr(context, "tenant_id", None) or state.get("tenant_id", "default")
+        if tenant_id:
+            # Estimate tokens (rough: ~4 chars per token)
+            estimated_tokens = len(prompt) // 4 + 1000  # Add buffer for output
+            budget_check = llm_cost_guardrails.check_budget(tenant_id, estimated_tokens)
+            
+            if not budget_check["allowed"]:
+                # Budget exceeded - route to HITL or return error
+                if budget_check.get("should_route_hitl"):
+                    return {
+                        "output": None,
+                        "error": "Token budget exceeded",
+                        "reason": budget_check.get("reason"),
+                        "route_to_hitl": True,
+                    }
+                else:
+                    raise ValueError(budget_check.get("reason", "Token budget exceeded"))
 
         # Try LangChain chain first if model_uri is provided
         chain = self._load_chain()
@@ -322,17 +374,35 @@ class LLMNode(Node):
         if chain is None:
             llm_wrapper = self._get_llm_wrapper()
 
-            # Extract prompt from state
-            prompt = state.get("prompt") or state.get("input") or str(state)
-            if isinstance(prompt, dict):
-                prompt = str(prompt)
-
             # Merge with params
             llm_params = self.params.copy()
             llm_params.update({k: v for k, v in state.items() if k not in ["prompt", "input"]})
 
             # Invoke LLM
             output = llm_wrapper.invoke(prompt, **llm_params)
+        
+        # Record token usage
+        tokens = output.get("tokens", {})
+        if isinstance(tokens, dict) and tenant_id:
+            total_tokens = tokens.get("total_tokens", 0)
+            if total_tokens > 0:
+                cost = output.get("cost", output.get("cost_usd", 0.0))
+                llm_cost_guardrails.record_usage(tenant_id, tokens, cost)
+        
+        # Cache response
+        if isinstance(output, dict) and "output" in output:
+            response_text = str(output.get("output", ""))
+            tokens = output.get("tokens", {})
+            cost = output.get("cost", output.get("cost_usd", 0.0))
+            
+            if isinstance(tokens, dict):
+                llm_cost_guardrails.cache_response(
+                    prompt=prompt,
+                    model=model_name,
+                    response=response_text,
+                    tokens=tokens,
+                    cost=cost,
+                )
 
         # Track execution with MLflow if context supports it
         latency = time.time() - start_time

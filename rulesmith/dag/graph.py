@@ -550,9 +550,21 @@ class Rulebook:
         # Execute - context manager handles setup/teardown automatically
         if hasattr(context, "__enter__"):
             with context:
-                result = engine.execute(payload, context, nodes=self._nodes, return_decision_result=return_decision_result)
+                result = engine.execute(
+                    payload,
+                    context,
+                    nodes=self._nodes,
+                    return_decision_result=return_decision_result,
+                    enable_memoization=True,  # Enable memoization by default
+                )
         else:
-            result = engine.execute(payload, context, nodes=self._nodes, return_decision_result=return_decision_result)
+            result = engine.execute(
+                payload,
+                context,
+                nodes=self._nodes,
+                return_decision_result=return_decision_result,
+                enable_memoization=True,  # Enable memoization by default
+            )
         
         # Return DecisionResult or Dict based on flag
         if return_decision_result:
