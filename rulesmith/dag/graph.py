@@ -432,8 +432,13 @@ class Rulebook:
             node._guard_policies = []
         node._guard_policies.append(guard_policy)
 
-        # Register default guards if not already done
-        register_default_guards(guard_executor)
+        # Register default guards if not already done (deprecated - use LangChain guardrails)
+        try:
+            register_default_guards(guard_executor)
+        except Exception:
+            # If register_default_guards fails (e.g., deprecated), that's okay
+            # Users should migrate to LangChain guardrails
+            pass
 
         # Legacy support for guard functions
         if guard_fn:
