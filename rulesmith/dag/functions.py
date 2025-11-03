@@ -20,6 +20,8 @@ def fork(
     track_metrics: bool = True,
     context: Optional[Any] = None,
     ghost_fork: bool = False,
+    fork_name: Optional[str] = None,
+    enable_reasoning: bool = True,
 ) -> Dict[str, Any]:
     """
     Fork function for A/B testing traffic splitting.
@@ -37,6 +39,8 @@ def fork(
         track_metrics: Whether to track A/B metrics
         context: Optional execution context
         ghost_fork: If True, run both arms but only execute actions on primary (shadow testing)
+        fork_name: Optional name for the fork (for tracking/lineage)
+        enable_reasoning: Whether to include reasoning/explanation in result
     
     Returns:
         Dictionary with routing metadata:
@@ -45,7 +49,11 @@ def fork(
         - ab_policy: Policy used
         - _ghost_fork: True if ghost fork mode
         - _fork_selection: Internal selection details
+        - _fork_reasoning: Optional reasoning explanation (if enable_reasoning=True)
+        - _all_arms: List of all arm names
     """
+    from rulesmith.ab.reasoning import explain_fork_selection
+    
     # Build context for policy
     policy_context = {
         "identity": identity,
@@ -53,13 +61,16 @@ def fork(
     }
     
     # Try to get arms_history from context if available
+    arms_history = None
     if context and hasattr(context, "arms_history"):
-        policy_context["arms_history"] = context.arms_history
+        arms_history = context.arms_history
+        policy_context["arms_history"] = arms_history
     elif context and hasattr(context, "state"):
         # Fallback to state if available
         state = getattr(context, "state", {})
         if "arms_history" in state:
-            policy_context["arms_history"] = state["arms_history"]
+            arms_history = state["arms_history"]
+            policy_context["arms_history"] = arms_history
     
     # Select arm
     selected_arm = pick_arm(
@@ -70,35 +81,109 @@ def fork(
         context=policy_context,
     )
     
+    fork_id = fork_name or "fork"
+    
     result = {
         "selected_variant": selected_arm.node,
-        "ab_test": "fork",  # Will be set by rulebook if name provided
+        "ab_test": fork_id,
         "ab_policy": policy,
         "_fork_selection": {
             "selected_arm": selected_arm.node,
             "policy": policy,
             "arm_weight": selected_arm.weight,
+            "identity": identity,
         },
+        "_all_arms": [arm.node for arm in arms],
+        "_arm_weights": {arm.node: arm.weight for arm in arms},
     }
+    
+    # Add reasoning/explanation
+    if enable_reasoning:
+        try:
+            fork_reason = explain_fork_selection(
+                fork_name=fork_id,
+                selected_arm=selected_arm.node,
+                policy=policy,
+                arms=arms,
+                context=policy_context,
+                arms_history=arms_history,
+            )
+            result["_fork_reasoning"] = {
+                "explanation": fork_reason.policy_explanation,
+                "decision_factors": fork_reason.decision_factors,
+                "arm_weights": fork_reason.arm_weights,
+            }
+            if fork_reason.historical_performance:
+                result["_fork_reasoning"]["historical_performance"] = fork_reason.historical_performance
+        except Exception:
+            # If reasoning fails, continue without it
+            pass
     
     if ghost_fork:
         result["_ghost_fork"] = True
         result["_ghost_arms"] = [arm.node for arm in arms]
+        result["_ghost_primary"] = selected_arm.node
     
     # Track A/B bucket in context if supported
     if context and hasattr(context, "set_ab_bucket"):
-        bucket = f"fork:{selected_arm.node}"
+        bucket = f"{fork_id}:{selected_arm.node}"
         context.set_ab_bucket(bucket)
     
-    # Log metrics if requested and context supports it
+    # Enhanced metrics tracking
+    if track_metrics:
+        try:
+            from rulesmith.ab.metrics import metrics_collector
+            from rulesmith.ab.lineage import lineage_tracker
+            
+            # Record fork selection (for metrics)
+            metrics_collector.record_arm_execution(
+                arm_name=selected_arm.node,
+                outcome={"selected": True, "fork": fork_id},
+                custom_metrics={"arm_weight": selected_arm.weight},
+            )
+            
+            # Record lineage
+            lineage_tracker.record_fork(
+                fork_name=fork_id,
+                policy=policy,
+                selected_arm=selected_arm.node,
+                all_arms=[arm.node for arm in arms],
+                arm_weights={arm.node: arm.weight for arm in arms},
+                identity=identity,
+                reasoning=result.get("_fork_reasoning"),
+                metrics_ref={
+                    "fork": fork_id,
+                    "arm": selected_arm.node,
+                    "policy": policy,
+                },
+            )
+            
+            # Store metrics reference in result for later completion
+            result["_metrics_ref"] = {
+                "fork": fork_id,
+                "arm": selected_arm.node,
+                "policy": policy,
+            }
+        except Exception:
+            pass  # If metrics collection fails, continue
+    
+    # Log to MLflow if requested and context supports it
     if track_metrics and context and hasattr(context, "enable_mlflow") and context.enable_mlflow:
         try:
             import mlflow
             
-            mlflow.set_tag("rulesmith.ab_fork", "fork")
+            mlflow.set_tag("rulesmith.ab_fork", fork_id)
             mlflow.set_tag("rulesmith.ab_arm", selected_arm.node)
             mlflow.set_tag("rulesmith.ab_policy", policy)
             mlflow.log_metric("ab_arm_weight", selected_arm.weight)
+            
+            # Log all arms for comparison
+            for arm in arms:
+                mlflow.log_metric(f"ab_arm_weight_{arm.node}", arm.weight)
+            
+            # Log reasoning if available
+            if "_fork_reasoning" in result:
+                mlflow.set_tag("rulesmith.ab_reasoning", result["_fork_reasoning"].get("explanation", ""))
         except Exception:
             pass  # Ignore MLflow errors
     
