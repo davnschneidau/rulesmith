@@ -113,47 +113,26 @@ class ExecutionEngine:
                 
                 execution_time_ms = (time.time() - start_time) * 1000
 
-                # Apply guardrails if attached
-                if hasattr(node, "_guard_policies") and node._guard_policies:
-                    from rulesmith.guardrails.execution import guard_executor
-                    from rulesmith.guardrails.mlflow import log_guard_results, log_guard_policy
-
-                    # Evaluate all guard policies
-                    for guard_policy in node._guard_policies:
-                        # Log to MLflow if available (gracefully handles if MLflow not enabled)
-                        try:
-                            log_guard_policy(guard_policy.name, guard_policy.checks, node_name)
-                        except Exception:
-                            pass  # MLflow not available - that's okay
-
-                        # Apply guard policy
-                        node_outputs = guard_executor.apply_policy(
-                            guard_policy,
-                            inputs=state,
-                            outputs=node_outputs,
-                        )
-
-                        # Log guard results to MLflow if available
-                        guard_results = node_outputs.get("_guard_results", [])
-                        if guard_results:
-                            try:
-                                from rulesmith.guardrails.execution import GuardResult
-                                results = [
-                                    GuardResult(**r) if isinstance(r, dict) else r
-                                    for r in guard_results
-                                ]
-                                log_guard_results(results, node_name)
-                                # Call hooks for each result
-                                for result in results:
-                                    hook_registry.on_guard(node_name, state, context, result)
-                            except Exception:
-                                pass  # MLflow not available - that's okay
-
-                        # Stop execution if guard blocked
-                        if node_outputs.get("_guard_blocked"):
-                            block_message = node_outputs.get("_guard_message", "Unknown reason")
-                            warnings.append(f"Guard blocked {node_name}: {block_message}")
-                            raise ValueError(f"Guard blocked execution: {block_message}")
+                # Metrics are now evaluated within the node's execute() method
+                # They are stored in node_outputs["_metrics"]
+                # Log metrics to MLflow if available
+                if "_metrics" in node_outputs:
+                    try:
+                        import mlflow
+                        if hasattr(context, "enable_mlflow") and context.enable_mlflow:
+                            metrics_dict = node_outputs["_metrics"]
+                            for metric_name, metric_data in metrics_dict.items():
+                                # Log metric value (0.0 for False, 1.0 for True, or actual numeric value)
+                                metric_value = metric_data.get("value", 0.0)
+                                if isinstance(metric_value, bool):
+                                    metric_value = 1.0 if metric_value else 0.0
+                                mlflow.log_metric(f"{node_name}_{metric_name}", float(metric_value))
+                                
+                                # Log message as tag if available
+                                if metric_data.get("message"):
+                                    mlflow.set_tag(f"{node_name}_{metric_name}_message", metric_data["message"])
+                    except Exception:
+                        pass  # MLflow not available - that's okay
 
                 # Track fired rules for rule nodes
                 if node.kind == "rule":

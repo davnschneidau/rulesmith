@@ -1,7 +1,7 @@
 """Node types for the DAG execution engine."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from rulesmith.guardrails.execution import guard_executor
 
@@ -120,6 +120,39 @@ class ModelNode(Node):
         # Execute prediction
         result = model_ref.predict(inputs)
 
+        # Evaluate metrics (guardrails) on output
+        if self.metrics:
+            metric_results = {}
+            for metric_func in self.metrics:
+                try:
+                    # Metric functions receive the output to evaluate
+                    metric_result = metric_func(result)
+                    
+                    # Normalize metric result
+                    if isinstance(metric_result, dict):
+                        metric_name = metric_result.get("name", metric_func.__name__)
+                        metric_value = metric_result.get("value", metric_result.get("passed", True))
+                        metric_message = metric_result.get("message")
+                    else:
+                        metric_name = metric_func.__name__
+                        metric_value = bool(metric_result) if metric_result is not None else True
+                        metric_message = None
+                    
+                    metric_results[f"{metric_name}"] = {
+                        "value": metric_value,
+                        "message": metric_message,
+                    }
+                except Exception as e:
+                    # On error, record failure
+                    metric_results[f"{metric_func.__name__}"] = {
+                        "value": False,
+                        "message": f"Metric evaluation error: {str(e)}",
+                        "error": str(e),
+                    }
+            
+            # Add metrics to output
+            result["_metrics"] = metric_results
+
         # Log model URI to context if supported
         if hasattr(context, "set_model_uri") and self.model_uri:
             context.set_model_uri(self.model_uri)
@@ -144,6 +177,7 @@ class LLMNode(Node):
         model_name: Optional[str] = None,
         gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
+        metrics: Optional[List[Callable]] = None,
     ):
         """
         Initialize LLMNode.
@@ -155,6 +189,7 @@ class LLMNode(Node):
             model_name: Model name (e.g., "gpt-4", "claude-3-5-sonnet")
             gateway_uri: Optional MLflow AI Gateway URI
             params: Optional parameters (API keys, temperature, etc.)
+            metrics: Optional list of rule functions to evaluate on output (guardrails)
         """
         super().__init__(name, "llm")
         self.model_uri = model_uri
@@ -162,6 +197,7 @@ class LLMNode(Node):
         self.model_name = model_name
         self.gateway_uri = gateway_uri
         self.params = params or {}
+        self.metrics = metrics or []  # Guardrails as rule-based metrics
         self._llm_wrapper = None
         self._chain = None
 
@@ -302,6 +338,40 @@ class LLMNode(Node):
 
         if hasattr(context, "set_model_uri") and self.model_uri:
             context.set_model_uri(self.model_uri)
+
+        # Evaluate metrics (guardrails) on output
+        if self.metrics:
+            metric_results = {}
+            for metric_func in self.metrics:
+                try:
+                    # Metric functions receive the output to evaluate
+                    metric_result = metric_func(output)
+                    
+                    # Normalize metric result
+                    if isinstance(metric_result, dict):
+                        metric_name = metric_result.get("name", metric_func.__name__)
+                        metric_value = metric_result.get("value", metric_result.get("passed", True))
+                        metric_message = metric_result.get("message")
+                    else:
+                        metric_name = getattr(metric_func, "_rule_spec", {}).name if hasattr(metric_func, "_rule_spec") else metric_func.__name__
+                        metric_value = bool(metric_result) if metric_result is not None else True
+                        metric_message = None
+                    
+                    metric_results[f"{metric_name}"] = {
+                        "value": metric_value,
+                        "message": metric_message,
+                    }
+                except Exception as e:
+                    # On error, record failure
+                    metric_name = getattr(metric_func, "_rule_spec", {}).name if hasattr(metric_func, "_rule_spec") else metric_func.__name__
+                    metric_results[f"{metric_name}"] = {
+                        "value": False,
+                        "message": f"Metric evaluation error: {str(e)}",
+                        "error": str(e),
+                    }
+            
+            # Add metrics to output
+            output["_metrics"] = metric_results
 
         # Log LLM metrics if context supports it
         if hasattr(context, "finish_genai"):

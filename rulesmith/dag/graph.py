@@ -10,7 +10,6 @@ from rulesmith.dag.nodes import (
     RuleNode,
 )
 from rulesmith.dag.registry import rule_registry
-from rulesmith.guardrails.policy import GuardPolicy
 from rulesmith.io.ser import ABArm, Edge, NodeSpec, RulebookSpec
 
 
@@ -172,6 +171,7 @@ class Rulebook:
         model_name: Optional[str] = None,
         gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
+        metrics: Optional[List[Callable]] = None,
     ) -> "Rulebook":
         """
         Add an LLM node.
@@ -183,9 +183,22 @@ class Rulebook:
             model_name: Optional model name
             gateway_uri: Optional MLflow AI Gateway URI
             params: Optional parameters
+            metrics: Optional list of rule functions to evaluate on output (guardrails)
 
         Returns:
             Self for chaining
+            
+        Examples:
+            # Basic LLM node
+            rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+            
+            # With custom metrics (guardrails)
+            @rule(name="check_toxicity", inputs=["output"], outputs=["is_toxic"])
+            def check_toxicity(output: str) -> dict:
+                toxic_words = ["hate", "violence"]
+                return {"is_toxic": any(word in output.lower() for word in toxic_words)}
+            
+            rb.add_llm("gpt4", provider="openai", model_name="gpt-4", metrics=[check_toxicity])
         """
         node = LLMNode(
             name,
@@ -194,6 +207,7 @@ class Rulebook:
             model_name=model_name,
             gateway_uri=gateway_uri,
             params=params,
+            metrics=metrics,
         )
         self._nodes[name] = node
         return self
@@ -351,38 +365,42 @@ class Rulebook:
         self._edges.append(edge)
         return self
 
-    def attach_guard(
+    def add_metrics(
         self,
         node_name: str,
-        guard_policy: Any,
+        metrics: List[Callable],
     ) -> "Rulebook":
         """
-        Attach a guardrail policy to a node.
+        Add metrics (guardrails) to a node. Metrics are rule functions that evaluate the node's output.
 
         Args:
-            node_name: Node name
-            guard_policy: GuardPolicy instance or guard function
+            node_name: Node name (must be LLM or Model node)
+            metrics: List of rule functions to evaluate on output
 
         Returns:
             Self for chaining
+            
+        Examples:
+            @rule(name="check_pii", inputs=["output"], outputs=["has_pii"])
+            def check_pii(output: str) -> dict:
+                return {"has_pii": "@" in output}
+            
+            rb.add_llm("gpt4", provider="openai", model_name="gpt-4")
+            rb.add_metrics("gpt4", [check_pii])
         """
         if node_name not in self._nodes:
             raise ValueError(f"Node '{node_name}' not found")
 
         node = self._nodes[node_name]
 
-        # Convert guard function to GuardPolicy if needed
-        if callable(guard_policy) and not isinstance(guard_policy, GuardPolicy):
-            # Assume it's a guard function
-            guard_policy = GuardPolicy(
-                name=getattr(guard_policy, "_guard_name", guard_policy.__name__),
-                checks=[guard_policy.__name__],
-            )
+        # Only LLM and Model nodes support metrics
+        if node.kind not in ("llm", "model"):
+            raise ValueError(f"Metrics can only be added to LLM or Model nodes, not {node.kind}")
 
-        # Store guard policy
-        if not hasattr(node, "_guard_policies"):
-            node._guard_policies = []
-        node._guard_policies.append(guard_policy)
+        # Add metrics to node
+        if not hasattr(node, "metrics"):
+            node.metrics = []
+        node.metrics.extend(metrics)
 
         return self
 
