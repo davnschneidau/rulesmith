@@ -38,6 +38,9 @@ dependencies = [
 langchain = [
     "langchain>=0.1.0",
 ]
+langchain-guardrails = [
+    "langchain-core>=0.1.0",  # For guardrails support
+]
 langgraph = [
     "langgraph>=0.0.20",
 ]
@@ -49,6 +52,9 @@ postgres = [
 ]
 all = [
     "rulesmith[langchain,langgraph,redis,postgres]",
+]
+guardrails = [
+    "rulesmith[langchain-guardrails]",
 ]
 
 [project.scripts]

@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from rulesmith.guardrails.execution import guard_executor
-from rulesmith.guardrails.packs import register_default_guards
 from rulesmith.io.ser import ABArm
 
 

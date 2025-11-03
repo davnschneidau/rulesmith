@@ -1,6 +1,12 @@
-"""Pre-built guardrail packs (PII, toxicity, hallucination, etc.)."""
+"""Pre-built guardrail packs (PII, toxicity, hallucination, etc.).
+
+DEPRECATED: This module is deprecated. Use LangChain/LangGraph guardrails instead.
+See rulesmith.guardrails.langchain_adapter and rulesmith.guardrails.langgraph_adapter
+for integration with LangChain's guardrail ecosystem.
+"""
 
 import re
+import warnings
 from typing import Any, Dict, List, Optional
 
 from rulesmith.guardrails.policy import GuardAction, GuardPolicy
@@ -205,7 +211,8 @@ class GuardPack:
         )
 
 
-# Pre-built guard packs
+# Pre-built guard packs (DEPRECATED - use LangChain guardrails instead)
+# These are kept for backward compatibility but will be removed in a future version.
 PII_PACK = GuardPack(
     name="pii",
     guards=["pii_email", "pii_phone", "pii_ssn"],
@@ -247,7 +254,31 @@ ALL_GUARDS_PACK = GuardPack(
 
 
 def register_default_guards(executor: Optional[Any] = None) -> None:
-    """Register all default guards with executor."""
+    """
+    Register all default guards with executor.
+    
+    DEPRECATED: This function is deprecated. Use LangChain/LangGraph guardrails instead.
+    
+    Install langchain-core or langchain-guardrails and use:
+    
+    ```python
+    from rulesmith.guardrails.langchain_adapter import register_langchain_guards
+    from langchain_guardrails import PIIGuard, ToxicityGuard
+    
+    guards = {
+        "pii": PIIGuard(),
+        "toxicity": ToxicityGuard(),
+    }
+    register_langchain_guards(guard_executor, guards)
+    ```
+    """
+    warnings.warn(
+        "register_default_guards() is deprecated. Use LangChain/LangGraph guardrails instead. "
+        "See rulesmith.guardrails.langchain_adapter for integration.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    
     from rulesmith.guardrails.execution import guard_executor as default_executor
 
     executor = executor or default_executor
