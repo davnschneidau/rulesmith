@@ -1,5 +1,10 @@
 """I/O modules for serialization, MLflow integration, and schema validation."""
 
+from rulesmith.io.decision_result import (
+    DecisionResult,
+    FiredRule,
+    ensure_decision_result,
+)
 from rulesmith.io.schemas import FieldSchema, SchemaContract, infer_schema, validate_with_schema
 from rulesmith.io.ser import (
     RuleSpec,
@@ -21,5 +26,8 @@ __all__ = [
     "FieldSchema",
     "validate_with_schema",
     "infer_schema",
+    "DecisionResult",
+    "FiredRule",
+    "ensure_decision_result",
 ]
 

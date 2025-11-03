@@ -515,7 +515,8 @@ class Rulebook:
         payload: Dict[str, Any],
         context: Optional[Any] = None,
         enable_mlflow: bool = True,
-    ) -> Dict[str, Any]:
+        return_decision_result: bool = True,
+    ):
         """
         Execute the rulebook with a payload.
 
@@ -523,13 +524,18 @@ class Rulebook:
             payload: Input payload dictionary
             context: Optional execution context (RunContext or MLflowRunContext)
             enable_mlflow: Whether to enable MLflow logging (default: True)
+            return_decision_result: If True, return DecisionResult; if False, return Dict (legacy)
 
         Returns:
-            Final output state
+            DecisionResult (default) or Dict (if return_decision_result=False)
         """
+        from rulesmith.io.decision_result import DecisionResult
+        
         spec = self.to_spec()
         engine = ExecutionEngine(spec)
-        engine.register_node(self._nodes)
+        # Register all nodes
+        for name, node in self._nodes.items():
+            engine.register_node(name, node)
 
         # Create simple context if not provided
         # For most users, MLflow integration "just works" - no need to understand contexts
@@ -544,7 +550,16 @@ class Rulebook:
         # Execute - context manager handles setup/teardown automatically
         if hasattr(context, "__enter__"):
             with context:
-                return engine.execute(payload, context, nodes=self._nodes)
+                result = engine.execute(payload, context, nodes=self._nodes, return_decision_result=return_decision_result)
         else:
-            return engine.execute(payload, context, nodes=self._nodes)
+            result = engine.execute(payload, context, nodes=self._nodes, return_decision_result=return_decision_result)
+        
+        # Return DecisionResult or Dict based on flag
+        if return_decision_result:
+            return result
+        else:
+            # Legacy mode: return the value dict
+            if isinstance(result, DecisionResult):
+                return result.value
+            return result
 
