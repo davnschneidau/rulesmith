@@ -240,9 +240,24 @@ class ExecutionEngine:
                 hook_registry.after_node(node_name, state, context, node_outputs)
 
             except Exception as e:
-                # Error handling - could be enhanced with retries
-                state[f"_error_{node_name}"] = str(e)
-                warnings.append(f"Error in {node_name}: {str(e)}")
+                # Enhanced error handling with context
+                from rulesmith.dx.errors import error_handler
+                
+                rule_name = None
+                if hasattr(node, "rule_func") and hasattr(node.rule_func, "_rule_spec"):
+                    rule_name = node.rule_func._rule_spec.name
+                
+                error_info = error_handler.handle_error(
+                    error=e,
+                    node_name=node_name,
+                    rule_name=rule_name,
+                    input_data=state,
+                )
+                
+                # Log error with context
+                error_msg = str(error_info)
+                state[f"_error_{node_name}"] = error_msg
+                warnings.append(f"Error in {node_name}: {error_msg}")
 
                 # Call on_error hooks
                 hook_registry.on_error(node_name, state, context, e)
@@ -250,11 +265,15 @@ class ExecutionEngine:
                 # Log error in MLflow if supported
                 if node_ctx:
                     try:
-                        node_ctx.finish({}, metrics={"error": 1.0})
+                        context.end_node_execution(node_ctx, error=error_msg)
                     except Exception:
-                        pass
+                        try:
+                            node_ctx.finish({}, metrics={"error": 1.0})
+                        except Exception:
+                            pass
 
-                raise
+                # Continue execution (fail gracefully) - don't raise
+                continue
 
             # Simply merge outputs into state (new values override old ones)
             # This is the default behavior - simple and predictable
