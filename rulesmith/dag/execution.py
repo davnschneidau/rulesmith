@@ -41,7 +41,18 @@ class ExecutionEngine:
         Returns:
             DecisionResult with execution trace and metadata
         """
+        from rulesmith.performance.memoization import memoization_cache
+        
         node_instances = nodes or self.nodes
+
+        # Check memoization cache
+        if enable_memoization:
+            cached_result = memoization_cache.get(
+                rulebook_version=self.spec.version,
+                inputs=payload,
+            )
+            if cached_result is not None:
+                return cached_result
 
         # Build execution order
         edges = [(edge.source, edge.target) for edge in self.spec.edges]
@@ -280,6 +291,19 @@ class ExecutionEngine:
                 costs=costs,
                 warnings=warnings,
             )
+            
+            # Cache result if memoization enabled
+            if enable_memoization:
+                try:
+                    memoization_cache.set(
+                        rulebook_version=self.spec.version,
+                        inputs=payload,
+                        result=decision_result,
+                    )
+                except Exception:
+                    # If caching fails, continue without it
+                    pass
+            
             return decision_result
         else:
             # Legacy mode: return state dict

@@ -194,6 +194,7 @@ def gate(
     condition: str,
     state: Dict[str, Any],
     context: Optional[Any] = None,
+    use_compiled: bool = True,
 ) -> Dict[str, Any]:
     """
     Gate function for conditional routing.
@@ -206,13 +207,39 @@ def gate(
         condition: Expression to evaluate (e.g., "age >= 18")
         state: Current state dictionary
         context: Optional execution context
+        use_compiled: If True, use compiled predicate for hot path
     
     Returns:
         Dictionary with:
         - passed: Boolean indicating if condition passed
         - error: Optional error message if evaluation failed
     """
-    # Safe expression evaluation
+    # Try compiled predicate first for performance
+    if use_compiled:
+        try:
+            from rulesmith.performance.compilation import predicate_compiler
+            
+            # Check if this is a numeric expression suitable for numexpr
+            is_numeric = any(
+                char.isdigit() or char in ["+", "-", "*", "/", ">", "<", "=", ".", " "]
+                for char in condition
+            )
+            
+            compiled = predicate_compiler.compile_predicate(
+                condition,
+                use_numexpr=is_numeric,
+                use_numba=False,  # Numba is slower for simple predicates
+            )
+            
+            # Filter state to only include relevant variables
+            safe_state = {k: v for k, v in state.items() if not k.startswith("_")}
+            result = compiled(safe_state)
+            return {"passed": bool(result)}
+        except Exception:
+            # Fall through to standard evaluation if compilation fails
+            pass
+    
+    # Safe expression evaluation (fallback)
     try:
         from asteval import Interpreter
         
