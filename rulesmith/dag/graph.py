@@ -100,19 +100,33 @@ class Rulebook:
         Returns:
             Self for chaining
         """
-        # Convert simple dict to ABArm list for backward compatibility
+        # Note: Fork functionality is now handled via fork() function in execution
+        # This method is kept for API compatibility but fork routing happens at execution time
+        # Store fork configuration in metadata for execution engine to use
         from rulesmith.io.ser import ABArm
         
         arms = [ABArm(node=variant_name, weight=weight) for variant_name, weight in variants.items()]
         
-        node = ForkNode(
-            name,
-            arms,
-            policy=policy,
-            policy_instance=policy_instance,
-            track_metrics=True,
-        )
-        self._nodes[name] = node
+        # Store fork configuration in metadata - execution engine will use fork() function
+        self.metadata[f"_fork_{name}"] = {
+            "arms": [{"node": arm.node, "weight": arm.weight} for arm in arms],
+            "policy": policy,
+            "policy_instance": policy_instance,
+        }
+        
+        # Create a placeholder node that will be handled by fork() function during execution
+        # We'll use a simple rule node as placeholder
+        from rulesmith.dag.nodes import RuleNode
+        
+        def fork_placeholder(state, context=None):
+            # This won't actually execute - fork() function handles routing
+            from rulesmith.dag.functions import fork
+            return fork(arms, policy=policy, policy_instance=policy_instance, context=context)
+        
+        # Mark as fork kind
+        placeholder = RuleNode(name, fork_placeholder)
+        placeholder.kind = "fork"  # Override kind for execution engine
+        self._nodes[name] = placeholder
         return self
     
 
