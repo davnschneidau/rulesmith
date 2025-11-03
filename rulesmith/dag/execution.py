@@ -95,7 +95,22 @@ class ExecutionEngine:
             # Execute node
             try:
                 start_time = time.time()
-                node_outputs = node.execute(state, context)
+                
+                # Apply auto-mapping if enabled
+                from rulesmith.dx.auto_mapping import auto_mapper
+                if hasattr(node, "_rule_func") and node._rule_func:
+                    # Try to auto-map inputs for rule nodes
+                    try:
+                        from rulesmith.dx.typing import type_validator
+                        # Validate and map inputs
+                        mapped_state = type_validator.validate_inputs(node._rule_func, state)
+                        node_outputs = node.execute(mapped_state, context)
+                    except Exception:
+                        # Fall back to normal execution if mapping fails
+                        node_outputs = node.execute(state, context)
+                else:
+                    node_outputs = node.execute(state, context)
+                
                 execution_time_ms = (time.time() - start_time) * 1000
 
                 # Apply guardrails if attached
