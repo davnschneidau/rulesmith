@@ -382,7 +382,13 @@ class Rulebook:
         self._nodes[name] = node
         return self
 
-    def connect(self, source: str, target: str, mapping: Optional[Dict[str, str]] = None) -> "Rulebook":
+    def connect(
+        self,
+        source: str,
+        target: str,
+        mapping: Optional[Dict[str, str]] = None,
+        auto_map: bool = True,
+    ) -> "Rulebook":
         """
         Connect two nodes. By default, all fields flow through automatically.
         
@@ -390,6 +396,7 @@ class Rulebook:
             source: Source node name
             target: Target node name
             mapping: Optional field mapping (rarely needed - only if you want to rename fields)
+            auto_map: If True, automatically infer missing mappings
         
         Examples:
             # Simple connection - all fields flow through
@@ -397,6 +404,9 @@ class Rulebook:
             
             # With field mapping (only if you need to rename)
             rb.connect("node1", "node2", mapping={"new_name": "old_name"})
+            
+            # Auto-map will infer mappings based on rule inputs/outputs
+            rb.connect("node1", "node2", auto_map=True)
         
         Returns:
             Self for chaining
@@ -405,6 +415,31 @@ class Rulebook:
             raise ValueError(f"Source node '{source}' not found")
         if target not in self._nodes:
             raise ValueError(f"Target node '{target}' not found")
+
+        # Auto-map if enabled and no explicit mapping provided
+        if auto_map and mapping is None:
+            try:
+                from rulesmith.dx.auto_mapping import auto_mapper
+                
+                # Get source node outputs (from rule spec if available)
+                source_node = self._nodes[source]
+                source_outputs = {}
+                if hasattr(source_node, "rule_func") and hasattr(source_node.rule_func, "_rule_spec"):
+                    source_outputs = {out: None for out in source_node.rule_func._rule_spec.outputs}
+                
+                # Get target node spec (for rule nodes)
+                target_node = self._nodes[target]
+                if hasattr(target_node, "rule_func") and hasattr(target_node.rule_func, "_rule_spec"):
+                    target_spec = target_node.rule_func._rule_spec
+                    # Infer mapping
+                    mapping = auto_mapper.infer_mapping(
+                        source_outputs,
+                        target_spec.inputs,
+                        existing_mapping=mapping,
+                    )
+            except Exception:
+                # If auto-mapping fails, use empty mapping (all fields flow through)
+                mapping = None
 
         edge = Edge(source=source, target=target, mapping=mapping)
         self._edges.append(edge)

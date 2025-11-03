@@ -36,6 +36,7 @@ class RuleNode(Node):
     def __init__(self, name: str, rule_func, params: Optional[Dict[str, Any]] = None):
         super().__init__(name, "rule")
         self.rule_func = rule_func
+        self._rule_func = rule_func  # Alias for DX integration
         self.params = params or {}
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
