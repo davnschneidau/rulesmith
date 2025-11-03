@@ -194,14 +194,15 @@ class Rulebook:
             DeprecationWarning,
             stacklevel=2,
         )
-        node = ModelNode(name, model_uri, params=params)
+        node = ModelNode(name, model_uri=model_uri, params=params)
         self._nodes[name] = node
         return self
     
     def add_model(
         self,
         name: str,
-        model_uri: str,
+        model_uri: Optional[str] = None,
+        langchain_model: Optional[Any] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> "Rulebook":
         """
@@ -209,13 +210,23 @@ class Rulebook:
 
         Args:
             name: Node name
-            model_uri: MLflow model URI
+            model_uri: Optional MLflow model URI
+            langchain_model: Optional direct LangChain model/chain instance
             params: Optional parameters
 
         Returns:
             Self for chaining
+            
+        Examples:
+            # MLflow model
+            rb.add_model("my_model", model_uri="models:/my_model/1")
+            
+            # LangChain model directly
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(model="gpt-4")
+            rb.add_model("llm_node", langchain_model=llm)
         """
-        node = ModelNode(name, model_uri, params=params)
+        node = ModelNode(name, model_uri=model_uri, langchain_model=langchain_model, params=params)
         self._nodes[name] = node
         return self
 
@@ -466,14 +477,20 @@ class Rulebook:
                     node_spec.rule_ref = rule_spec.name
             elif isinstance(node, (ModelNode, BYOMNode)):  # BYOMNode is alias
                 node_spec.model_uri = node.model_uri
+                # Note: langchain_model cannot be serialized, must be provided at runtime
+                if node.langchain_model:
+                    node_spec.params["_has_langchain_model"] = True
             elif isinstance(node, (LLMNode, GenAINode)):  # GenAINode is alias
                 node_spec.model_uri = node.model_uri
-                if hasattr(node, "provider"):
+                if hasattr(node, "provider") and node.provider:
                     node_spec.params["provider"] = node.provider
-                if hasattr(node, "model_name"):
+                if hasattr(node, "model_name") and node.model_name:
                     node_spec.params["model_name"] = node.model_name
-                if hasattr(node, "gateway_uri"):
+                if hasattr(node, "gateway_uri") and node.gateway_uri:
                     node_spec.params["gateway_uri"] = node.gateway_uri
+                # Store all params for provider-specific config
+                if node.params:
+                    node_spec.params.update(node.params)
             elif isinstance(node, LangChainNode):
                 node_spec.model_uri = node.chain_model_uri
             elif isinstance(node, LangGraphNode):

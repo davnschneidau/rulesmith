@@ -1,36 +1,90 @@
-"""Provider-agnostic GenAI/LLM wrapper."""
+"""Provider-agnostic GenAI/LLM wrapper with LangChain ChatModel integration."""
 
 from typing import Any, Dict, Optional
 
+from rulesmith.models.providers import (
+    create_langchain_chat_model,
+    detect_provider_from_model,
+    get_provider_config,
+    list_supported_providers,
+)
+
 
 class GenAIWrapper:
-    """Provider-agnostic LLM interface."""
+    """
+    Provider-agnostic LLM interface with multi-model support via LangChain.
+    
+    This wrapper uses LangChain's ChatModel interface as the primary abstraction,
+    supporting all LangChain-compatible providers (OpenAI, Anthropic, Google, etc.).
+    """
 
     def __init__(
         self,
-        provider: str = "openai",
+        provider: Optional[str] = None,
         model_name: Optional[str] = None,
         model_uri: Optional[str] = None,
         gateway_uri: Optional[str] = None,
+        **kwargs: Any,
     ):
         """
         Initialize GenAI wrapper.
 
         Args:
-            provider: Provider name (openai, anthropic, etc.)
-            model_name: Model name
+            provider: Provider name (openai, anthropic, google, etc.). If None, auto-detects from model_name.
+            model_name: Model name (e.g., "gpt-4", "claude-3-5-sonnet"). Provider auto-detected if not specified.
             model_uri: Optional MLflow model URI
             gateway_uri: Optional MLflow AI Gateway URI
+            **kwargs: Provider-specific configuration (API keys, endpoints, temperature, etc.)
         """
-        self.provider = provider.lower()
-        self.model_name = model_name
         self.model_uri = model_uri
         self.gateway_uri = gateway_uri
+        self._provider_config = kwargs.copy()
+        
+        # Auto-detect provider from model name if not provided
+        if provider:
+            self.provider = provider.lower()
+        elif model_name:
+            detected = detect_provider_from_model(model_name)
+            if detected:
+                self.provider = detected
+            else:
+                # Default to openai if can't detect
+                self.provider = "openai"
+        else:
+            self.provider = "openai"
+        
+        self.model_name = model_name
+        self._langchain_model = None
         self._client = None
         self._chain = None
 
+    def _get_langchain_model(self):
+        """Lazy load LangChain ChatModel for the provider."""
+        if self._langchain_model is None:
+            # Try to use LangChain ChatModel first (preferred)
+            try:
+                provider_config = get_provider_config(self.provider)
+                if provider_config:
+                    # Extract model name and provider-specific config
+                    model = self.model_name or provider_config.get("default_model")
+                    if not model:
+                        raise ValueError(f"Model name required for provider '{self.provider}'")
+                    
+                    # Create LangChain ChatModel
+                    self._langchain_model = create_langchain_chat_model(
+                        provider=self.provider,
+                        model_name=model,
+                        **self._provider_config,
+                    )
+                    return self._langchain_model
+            except (ImportError, ValueError) as e:
+                # Fall back to direct client if LangChain not available
+                pass
+        
+        return self._langchain_model
+    
     def _get_client(self):
-        """Lazy load the provider client."""
+        """Lazy load the provider client (fallback for backward compatibility)."""
         if self._client is None:
             if self.gateway_uri:
                 # Use MLflow AI Gateway
@@ -41,6 +95,16 @@ class GenAIWrapper:
                     self._client = "gateway"
                 except ImportError:
                     raise ImportError("MLflow Gateway requires mlflow>=2.9.0")
+
+            elif self.model_uri:
+                # Try to load as MLflow LangChain model
+                try:
+                    import mlflow.pyfunc
+
+                    self._chain = mlflow.pyfunc.load_model(self.model_uri)
+                    self._client = "mlflow"
+                except Exception:
+                    raise ValueError(f"Could not load model from URI: {self.model_uri}")
 
             elif self.provider == "openai":
                 try:
@@ -58,21 +122,16 @@ class GenAIWrapper:
                 except ImportError:
                     raise ImportError("Anthropic provider requires 'anthropic' package")
 
-            elif self.model_uri:
-                # Try to load as MLflow LangChain model
-                try:
-                    import mlflow.pyfunc
-
-                    self._chain = mlflow.pyfunc.load_model(self.model_uri)
-                    self._client = "mlflow"
-                except Exception:
-                    raise ValueError(f"Could not load model from URI: {self.model_uri}")
-
             else:
-                raise ValueError(
-                    f"Provider '{self.provider}' not supported. "
-                    "Use 'openai', 'anthropic', provide model_uri, or gateway_uri."
-                )
+                # For other providers, try LangChain first
+                langchain_model = self._get_langchain_model()
+                if langchain_model:
+                    self._client = "langchain"
+                else:
+                    raise ValueError(
+                        f"Provider '{self.provider}' not supported. "
+                        f"Supported providers: {', '.join(list_supported_providers())}"
+                    )
 
         return self._client
 
@@ -106,7 +165,46 @@ class GenAIWrapper:
         Returns:
             Response dictionary with 'output', 'tokens', 'cost', etc.
         """
-        # Try LangChain chain first
+        # Try LangChain ChatModel first (preferred method)
+        langchain_model = self._get_langchain_model()
+        if langchain_model:
+            try:
+                # Use LangChain ChatModel interface
+                from langchain_core.messages import HumanMessage
+                
+                messages = [HumanMessage(content=prompt)]
+                response = langchain_model.invoke(
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
+                
+                # Extract output and metadata
+                output = response.content if hasattr(response, "content") else str(response)
+                
+                # Try to get usage/token info
+                tokens = {}
+                if hasattr(response, "response_metadata"):
+                    metadata = response.response_metadata or {}
+                    usage = metadata.get("usage", {})
+                    if usage:
+                        tokens = {
+                            "input_tokens": usage.get("prompt_tokens", 0),
+                            "output_tokens": usage.get("completion_tokens", 0),
+                            "total_tokens": usage.get("total_tokens", 0),
+                        }
+                
+                return {
+                    "output": output,
+                    "tokens": tokens,
+                    "provider": self.provider,
+                }
+            except Exception as e:
+                # Fall through to other methods if LangChain fails
+                pass
+        
+        # Try LangChain chain from MLflow
         chain = self._load_chain()
         if chain:
             try:
@@ -117,7 +215,7 @@ class GenAIWrapper:
             except Exception:
                 pass  # Fall through to direct client
 
-        # Get client
+        # Get client (fallback for backward compatibility)
         client = self._get_client()
 
         # Use MLflow Gateway
@@ -196,6 +294,25 @@ class GenAIWrapper:
                 return {"output": result.get("output", result), **result}
             return {"output": result}
 
+        elif client == "langchain":
+            # Should have been handled above, but fallback
+            return {"output": "LangChain model error", "provider": self.provider}
         else:
-            return {"output": f"Provider '{self.provider}' not yet fully implemented", "provider": self.provider}
+            # Try to get LangChain model as last resort
+            langchain_model = self._get_langchain_model()
+            if langchain_model:
+                try:
+                    from langchain_core.messages import HumanMessage
+                    messages = [HumanMessage(content=prompt)]
+                    response = langchain_model.invoke(messages, temperature=temperature, max_tokens=max_tokens, **kwargs)
+                    output = response.content if hasattr(response, "content") else str(response)
+                    return {"output": output, "provider": self.provider}
+                except Exception as e:
+                    return {"output": f"Provider '{self.provider}' error: {str(e)}", "provider": self.provider}
+            
+            return {
+                "output": f"Provider '{self.provider}' not yet fully implemented. "
+                         f"Supported providers: {', '.join(list_supported_providers())}",
+                "provider": self.provider,
+            }
 

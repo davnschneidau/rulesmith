@@ -171,11 +171,36 @@ class GateNode(Node):
 
 
 class ModelNode(Node):
-    """Node that loads and executes an MLflow model or LangChain model."""
+    """
+    Node that loads and executes an MLflow model or LangChain model.
+    
+    Supports:
+    - MLflow models (sklearn, PyTorch, XGBoost, custom pyfunc)
+    - LangChain chains/models loaded from MLflow
+    - Direct LangChain model initialization
+    """
 
-    def __init__(self, name: str, model_uri: str, params: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        name: str,
+        model_uri: Optional[str] = None,
+        langchain_model: Optional[Any] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Initialize ModelNode.
+
+        Args:
+            name: Node name
+            model_uri: Optional MLflow model URI
+            langchain_model: Optional direct LangChain model/chain instance
+            params: Optional parameters
+        """
         super().__init__(name, "model")
+        if not model_uri and not langchain_model:
+            raise ValueError("Either model_uri or langchain_model must be provided")
         self.model_uri = model_uri
+        self.langchain_model = langchain_model
         self.params = params or {}
         self._model_ref = None
 
@@ -184,11 +209,11 @@ class ModelNode(Node):
         if self._model_ref is None:
             from rulesmith.models.mlflow_byom import BYOMRef
 
-            self._model_ref = BYOMRef(self.model_uri)
+            self._model_ref = BYOMRef(model_uri=self.model_uri, langchain_model=self.langchain_model)
         return self._model_ref
 
     def execute(self, state: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Execute the MLflow model."""
+        """Execute the model."""
         model_ref = self._get_model_ref()
 
         # Prepare inputs by merging state with params
@@ -199,7 +224,7 @@ class ModelNode(Node):
         result = model_ref.predict(inputs)
 
         # Log model URI to context if supported
-        if hasattr(context, "set_model_uri"):
+        if hasattr(context, "set_model_uri") and self.model_uri:
             context.set_model_uri(self.model_uri)
 
         return result
@@ -210,7 +235,13 @@ BYOMNode = ModelNode
 
 
 class LLMNode(Node):
-    """Node that executes an LLM call via LangChain or direct provider."""
+    """
+    Node that executes an LLM call via LangChain or direct provider.
+    
+    Supports all LangChain-compatible providers (OpenAI, Anthropic, Google, etc.)
+    via LangChain's ChatModel interface. Provider is auto-detected from model name
+    if not specified.
+    """
 
     def __init__(
         self,
@@ -221,9 +252,20 @@ class LLMNode(Node):
         gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ):
+        """
+        Initialize LLMNode.
+
+        Args:
+            name: Node name
+            model_uri: Optional MLflow model URI
+            provider: Optional provider name (auto-detected from model_name if not provided)
+            model_name: Model name (e.g., "gpt-4", "claude-3-5-sonnet")
+            gateway_uri: Optional MLflow AI Gateway URI
+            params: Optional parameters (API keys, temperature, etc.)
+        """
         super().__init__(name, "llm")
         self.model_uri = model_uri
-        self.provider = provider or "openai"
+        self.provider = provider
         self.model_name = model_name
         self.gateway_uri = gateway_uri
         self.params = params or {}
@@ -236,10 +278,11 @@ class LLMNode(Node):
             from rulesmith.models.genai import GenAIWrapper
 
             self._llm_wrapper = GenAIWrapper(
-                provider=self.provider,
+                provider=self.provider,  # Auto-detected if None
                 model_name=self.model_name,
                 model_uri=self.model_uri,
                 gateway_uri=self.gateway_uri,
+                **self.params,  # Pass params for provider-specific config (API keys, etc.)
             )
         return self._llm_wrapper
 
