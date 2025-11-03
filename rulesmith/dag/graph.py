@@ -6,10 +6,12 @@ from rulesmith.dag.execution import ExecutionEngine
 from rulesmith.dag.langchain_node import LangChainNode
 from rulesmith.dag.langgraph_node import LangGraphNode
 from rulesmith.dag.nodes import (
-    BYOMNode,
-    ForkNode,
-    GateNode,
-    GenAINode,
+    BYOMNode,  # Deprecated alias
+    ForkNode,  # Deprecated - use fork() function
+    GateNode,  # Deprecated - use gate() function
+    GenAINode,  # Deprecated alias
+    LLMNode,
+    ModelNode,
     Node,
     RuleNode,
 )
@@ -175,6 +177,8 @@ class Rulebook:
     ) -> "Rulebook":
         """
         Add a BYOM (Bring Your Own Model) node.
+        
+        DEPRECATED: Use add_model() instead.
 
         Args:
             name: Node name
@@ -184,7 +188,34 @@ class Rulebook:
         Returns:
             Self for chaining
         """
-        node = BYOMNode(name, model_uri, params=params)
+        import warnings
+        warnings.warn(
+            "add_byom() is deprecated. Use add_model() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        node = ModelNode(name, model_uri, params=params)
+        self._nodes[name] = node
+        return self
+    
+    def add_model(
+        self,
+        name: str,
+        model_uri: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> "Rulebook":
+        """
+        Add a model node (MLflow or LangChain model).
+
+        Args:
+            name: Node name
+            model_uri: MLflow model URI
+            params: Optional parameters
+
+        Returns:
+            Self for chaining
+        """
+        node = ModelNode(name, model_uri, params=params)
         self._nodes[name] = node
         return self
 
@@ -199,6 +230,8 @@ class Rulebook:
     ) -> "Rulebook":
         """
         Add a GenAI/LLM node.
+        
+        DEPRECATED: Use add_llm() instead.
 
         Args:
             name: Node name
@@ -211,7 +244,47 @@ class Rulebook:
         Returns:
             Self for chaining
         """
-        node = GenAINode(
+        import warnings
+        warnings.warn(
+            "add_genai() is deprecated. Use add_llm() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        node = LLMNode(
+            name,
+            model_uri=model_uri,
+            provider=provider,
+            model_name=model_name,
+            gateway_uri=gateway_uri,
+            params=params,
+        )
+        self._nodes[name] = node
+        return self
+    
+    def add_llm(
+        self,
+        name: str,
+        model_uri: Optional[str] = None,
+        provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+        gateway_uri: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> "Rulebook":
+        """
+        Add an LLM node.
+
+        Args:
+            name: Node name
+            model_uri: Optional MLflow model URI
+            provider: Optional provider name (openai, anthropic, etc.)
+            model_name: Optional model name
+            gateway_uri: Optional MLflow AI Gateway URI
+            params: Optional parameters
+
+        Returns:
+            Self for chaining
+        """
+        node = LLMNode(
             name,
             model_uri=model_uri,
             provider=provider,
@@ -386,9 +459,9 @@ class Rulebook:
                 if hasattr(node.rule_func, "_rule_spec"):
                     rule_spec = node.rule_func._rule_spec
                     node_spec.rule_ref = rule_spec.name
-            elif isinstance(node, BYOMNode):
+            elif isinstance(node, (ModelNode, BYOMNode)):  # BYOMNode is alias
                 node_spec.model_uri = node.model_uri
-            elif isinstance(node, GenAINode):
+            elif isinstance(node, (LLMNode, GenAINode)):  # GenAINode is alias
                 node_spec.model_uri = node.model_uri
                 if hasattr(node, "provider"):
                     node_spec.params["provider"] = node.provider
