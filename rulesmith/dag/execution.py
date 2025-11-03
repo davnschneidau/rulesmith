@@ -1,10 +1,11 @@
 """Core execution engine with resolution policy."""
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from rulesmith.dag.nodes import Node
 from rulesmith.dag.scheduler import topological_sort
+from rulesmith.io.decision_result import DecisionResult, FiredRule
 from rulesmith.io.ser import Edge, RulebookSpec
 from rulesmith.runtime.context import RunContext
 from rulesmith.runtime.hooks import hook_registry
@@ -26,7 +27,8 @@ class ExecutionEngine:
         payload: Dict[str, Any],
         context: Any,
         nodes: Optional[Dict[str, Node]] = None,
-    ) -> Dict[str, Any]:
+        return_decision_result: bool = True,
+    ) -> Union[DecisionResult, Dict[str, Any]]:
         """
         Execute the rulebook DAG.
 
@@ -34,9 +36,10 @@ class ExecutionEngine:
             payload: Initial input payload
             context: Execution context (RunContext or MLflowRunContext)
             nodes: Optional node instances (if None, uses registered nodes)
+            return_decision_result: If True, return DecisionResult; if False, return Dict (legacy)
 
         Returns:
-            Final state after execution
+            DecisionResult with execution trace and metadata
         """
         node_instances = nodes or self.nodes
 
@@ -47,6 +50,14 @@ class ExecutionEngine:
 
         # Initialize state with payload
         state = payload.copy()
+
+        # Track execution metadata for DecisionResult
+        fired_rules: List[FiredRule] = []
+        skipped_nodes: List[str] = []
+        metrics: Dict[str, float] = {}
+        costs: Dict[str, float] = {}
+        warnings: List[str] = []
+        total_start_time = time.time()
 
         # Check context capabilities (MLflow integration is optional and handled gracefully)
         supports_node_tracking = hasattr(context, "start_node_execution")
@@ -74,6 +85,7 @@ class ExecutionEngine:
             try:
                 start_time = time.time()
                 node_outputs = node.execute(state, context)
+                execution_time_ms = (time.time() - start_time) * 1000
 
                 # Apply guardrails if attached
                 if hasattr(node, "_guard_policies") and node._guard_policies:
@@ -113,9 +125,72 @@ class ExecutionEngine:
 
                         # Stop execution if guard blocked
                         if node_outputs.get("_guard_blocked"):
-                            raise ValueError(
-                                f"Guard blocked execution: {node_outputs.get('_guard_message', 'Unknown reason')}"
-                            )
+                            block_message = node_outputs.get("_guard_message", "Unknown reason")
+                            warnings.append(f"Guard blocked {node_name}: {block_message}")
+                            raise ValueError(f"Guard blocked execution: {block_message}")
+
+                # Track fired rules for rule nodes
+                if node.kind == "rule":
+                    try:
+                        rule_id = node_name
+                        rule_name = node_name
+                        salience = 0
+                        
+                        # Try to get rule spec if available
+                        if hasattr(node, "rule_func") and hasattr(node.rule_func, "_rule_spec"):
+                            rule_spec = node.rule_func._rule_spec
+                            rule_id = rule_spec.id or node_name
+                            rule_name = rule_spec.name or node_name
+                            salience = getattr(rule_spec, "salience", 0)
+                        
+                        # Generate reason (simple explanation)
+                        reason = f"Rule '{rule_name}' executed successfully"
+                        if node_outputs:
+                            output_keys = list(node_outputs.keys())
+                            if output_keys:
+                                reason = f"Rule '{rule_name}' produced outputs: {', '.join(output_keys)}"
+                        
+                        fired_rule = FiredRule(
+                            id=rule_id,
+                            name=rule_name,
+                            salience=salience,
+                            inputs=state.copy(),  # Snapshot of state at rule execution
+                            outputs=node_outputs.copy(),
+                            reason=reason,
+                            duration_ms=execution_time_ms,
+                        )
+                        fired_rules.append(fired_rule)
+                    except Exception as e:
+                        # If tracking fails, continue but add warning
+                        warnings.append(f"Failed to track rule {node_name}: {str(e)}")
+
+                # Track costs from LLM nodes
+                if node.kind in ("llm", "genai") and node_outputs:
+                    # Try to extract token/cost information
+                    if isinstance(node_outputs, dict):
+                        if "tokens" in node_outputs and isinstance(node_outputs["tokens"], dict):
+                            total_tokens = node_outputs["tokens"].get("total_tokens", 0)
+                            if total_tokens > 0:
+                                metrics[f"{node_name}_tokens"] = float(total_tokens)
+                        
+                        # Extract cost if available
+                        if "cost" in node_outputs:
+                            costs[f"{node_name}_cost"] = float(node_outputs["cost"])
+                        elif "cost_usd" in node_outputs:
+                            costs[f"{node_name}_cost"] = float(node_outputs["cost_usd"])
+                        
+                        # Try to extract from tokens if provider info available
+                        if "tokens" in node_outputs and "provider" in node_outputs:
+                            # Simple cost estimation (would be better with provider-specific rates)
+                            pass  # Could add cost calculation here
+
+                # Track metrics
+                metrics[f"{node_name}_duration_ms"] = execution_time_ms
+                if node_outputs and isinstance(node_outputs, dict):
+                    # Extract any numeric metrics from outputs
+                    for key, value in node_outputs.items():
+                        if isinstance(value, (int, float)) and not key.startswith("_"):
+                            metrics[f"{node_name}_{key}"] = float(value)
 
                 # Set execution metadata if context supports it
                 if node_ctx:
@@ -141,6 +216,7 @@ class ExecutionEngine:
             except Exception as e:
                 # Error handling - could be enhanced with retries
                 state[f"_error_{node_name}"] = str(e)
+                warnings.append(f"Error in {node_name}: {str(e)}")
 
                 # Call on_error hooks
                 hook_registry.on_error(node_name, state, context, e)
@@ -161,7 +237,53 @@ class ExecutionEngine:
             # Track that this node executed (for debugging)
             state[f"_executed_{node_name}"] = True
 
-        return state
+        # Build DecisionResult
+        total_duration_ms = (time.time() - total_start_time) * 1000
+        metrics["total_duration_ms"] = total_duration_ms
+        
+        # Extract primary value (default to state, but can be customized)
+        # For now, we'll use the entire state as value, but remove internal tracking fields
+        value = {
+            k: v for k, v in state.items()
+            if not k.startswith("_") or k in ["_executed_", "_ab_selection", "_fork_selection"]
+        }
+        
+        # Get trace URI from context if available
+        trace_uri = None
+        if hasattr(context, "get_trace_uri"):
+            try:
+                trace_uri = context.get_trace_uri()
+            except Exception:
+                pass
+        elif hasattr(context, "run_id"):
+            # MLflow run ID
+            try:
+                import mlflow
+                if hasattr(mlflow, "active_run") and mlflow.active_run():
+                    trace_uri = mlflow.active_run().info.run_id
+            except Exception:
+                pass
+        
+        # Identify skipped nodes (nodes in spec but not in execution order due to conditional routing)
+        all_node_names = set(node.name for node in self.spec.nodes)
+        executed_node_names = set(execution_order)
+        skipped_nodes.extend(sorted(all_node_names - executed_node_names))
+        
+        if return_decision_result:
+            decision_result = DecisionResult(
+                value=value,
+                version=self.spec.version,
+                trace_uri=trace_uri,
+                fired=fired_rules,
+                skipped=skipped_nodes,
+                metrics=metrics,
+                costs=costs,
+                warnings=warnings,
+            )
+            return decision_result
+        else:
+            # Legacy mode: return state dict
+            return state
 
     # Simplified: Removed _map_inputs and _merge_outputs
     # - All nodes receive the full state dictionary (simple)
