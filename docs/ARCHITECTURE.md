@@ -8,7 +8,8 @@ Rulesmith is a rulebook/DAG execution engine with deep MLflow integration for pr
 
 ### 1. DAG Engine (`rulesmith/dag/`)
 - **Rulebook**: DAG builder and executor
-- **Nodes**: Rule, Fork, Gate, BYOM, GenAI, HITL, LangChain, LangGraph
+- **Nodes**: Rule, Model, LLM, HITL (LangChain/LangGraph models via ModelNode)
+- **Functions**: fork(), gate(), hitl() for routing logic
 - **Execution Engine**: Topological sorting, field mapping, state management
 - **Scheduler**: Execution order calculation
 
@@ -19,17 +20,16 @@ Rulesmith is a rulebook/DAG execution engine with deep MLflow integration for pr
 - **Lineage**: Code hashes, model URIs
 
 ### 3. Model Integration (`rulesmith/models/`)
-- **BYOM**: Bring Your Own Model (MLflow models)
-- **LangChain**: Chain integration
-- **LangGraph**: Graph integration
-- **GenAI**: Provider-agnostic LLM wrapper
+- **ModelNode**: MLflow models or LangChain/LangGraph models
+- **LLMNode**: Multi-provider LLM wrapper (OpenAI, Anthropic, Google, etc.)
+- **GenAIWrapper**: Provider-agnostic LLM abstraction
 
 ### 4. A/B Testing (`rulesmith/ab/`)
 - **Policies**: Hash, Random, Thompson Sampling, UCB, Epsilon-Greedy
 - **Traffic Management**: Deterministic and adaptive allocation
 
 ### 5. Guardrails (`rulesmith/guardrails/`)
-- **Guards**: PII, Toxicity, Hallucination, Output Validation
+- **LangChain Guardrails**: Integration with LangChain's guardrail ecosystem
 - **Policies**: ALLOW, BLOCK, OVERRIDE, FLAG
 - **Execution**: Automatic guard evaluation
 

@@ -67,51 +67,45 @@ Add a rule node to the rulebook.
 
 **Returns:** Self for chaining
 
-##### `add_gate(name, condition)`
+##### `add_model(name, model_uri=None, langchain_model=None, params=None)`
 
-Add a conditional gate node.
-
-**Parameters:**
-- `name` (str): Gate node name
-- `condition` (str): Boolean expression
-
-**Returns:** Self for chaining
-
-##### `add_byom(name, model_uri, params=None)`
-
-Add a BYOM (Bring Your Own Model) node.
-
-**Parameters:**
-- `name` (str): Node name
-- `model_uri` (str): MLflow model URI
-- `params` (Dict[str, Any], optional): Additional parameters
-
-**Returns:** Self for chaining
-
-##### `add_genai(name, model_uri=None, provider="openai", model_name=None, gateway_uri=None, params=None)`
-
-Add a GenAI/LLM node.
+Add a model node (MLflow or LangChain model).
 
 **Parameters:**
 - `name` (str): Node name
 - `model_uri` (str, optional): MLflow model URI
-- `provider` (str): Provider name ("openai", "anthropic", "mlflow_gateway", "langchain")
-- `model_name` (str, optional): Model name
-- `gateway_uri` (str, optional): MLflow Gateway URI
-- `params` (Dict[str, Any], optional): GenAI parameters
+- `langchain_model` (Any, optional): Direct LangChain model/chain instance
+- `params` (Dict[str, Any], optional): Additional parameters
 
 **Returns:** Self for chaining
 
-##### `add_fork(name, arms, policy="hash", policy_instance=None, track_metrics=True)`
+**Note:** Gate functionality is now handled via the `gate()` function during execution, not as a node class.
 
-Add an A/B testing fork node.
+##### `add_llm(name, model_uri=None, provider=None, model_name=None, gateway_uri=None, params=None)`
+
+Add an LLM node with multi-provider support.
 
 **Parameters:**
-- `name` (str): Fork node name
-- `arms` (List[ABArm]): List of A/B arms
-- `policy` (str): Policy name ("hash", "random", "thompson_sampling", "ucb1", "epsilon_greedy")
+- `name` (str): Node name
+- `model_uri` (str, optional): MLflow model URI
+- `provider` (str, optional): Provider name (auto-detected from model_name if not provided)
+- `model_name` (str, optional): Model name (e.g., "gpt-4", "claude-3", "gemini-pro")
+- `gateway_uri` (str, optional): MLflow Gateway URI
+- `params` (Dict[str, Any], optional): Provider-specific parameters
+
+**Returns:** Self for chaining
+
+**Note:** `add_byom()` and `add_genai()` are deprecated. Use `add_model()` and `add_llm()` instead.
+
+##### `add_split(name, variants, policy="hash", policy_instance=None)`
+
+Add an A/B test split node (simplified API for A/B testing).
+
+**Parameters:**
+- `name` (str): Split node name
+- `variants` (Dict[str, float]): Dictionary of variant names to weights (e.g., {"control": 0.5, "treatment": 0.5})
+- `policy` (str): Policy name ("hash", "random", "thompson", "ucb", "epsilon")
 - `policy_instance` (TrafficPolicy, optional): Custom policy instance
-- `track_metrics` (bool): Whether to track metrics in MLflow
 
 **Returns:** Self for chaining
 
@@ -128,16 +122,17 @@ Add a Human-in-the-Loop node.
 
 **Returns:** Self for chaining
 
-##### `attach_guard(node_name, guard_policy, guard_fn=None)`
+##### `attach_guard(node_name, guard_policy)`
 
 Attach a guardrail policy to a node.
 
 **Parameters:**
 - `node_name` (str): Node name
-- `guard_policy` (GuardPolicy or GuardPack): Guard policy or pack
-- `guard_fn` (Callable, optional): Legacy guard function
+- `guard_policy` (GuardPolicy): Guard policy instance or guard function
 
 **Returns:** Self for chaining
+
+**Note:** Guard functions are automatically converted to GuardPolicy instances. Use LangChain guardrails for production use cases.
 
 ##### `connect(source, target, mapping=None)`
 
@@ -215,25 +210,19 @@ Base class for all node types.
 
 Executes a registered rule function.
 
-#### `GateNode`
+#### `ModelNode`
 
-Conditional routing based on expressions.
+Executes MLflow models or LangChain models.
 
-#### `ForkNode`
+#### `LLMNode`
 
-A/B testing traffic splitting.
-
-#### `BYOMNode`
-
-Executes MLflow models.
-
-#### `GenAINode`
-
-Executes GenAI/LLM calls.
+Executes LLM calls with multi-provider support (OpenAI, Anthropic, Google, etc.).
 
 #### `HITLNode`
 
 Human-in-the-Loop review node.
+
+**Note:** `GateNode`, `ForkNode`, `BYOMNode`, and `GenAINode` are deprecated. Gate and fork functionality is handled via functions (`gate()`, `fork()`) during execution. Use `ModelNode` and `LLMNode` instead of `BYOMNode` and `GenAINode`.
 
 ---
 
@@ -458,21 +447,27 @@ policy = GuardPolicy(
 
 ---
 
-### `GuardPack`
+### LangChain Guardrails
 
-Pre-built guardrail packs.
+Integration with LangChain's guardrail ecosystem.
 
 ```python
-from rulesmith.guardrails.packs import PII_PACK, TOXICITY_PACK, HALLUCINATION_PACK
+from rulesmith.guardrails.langchain_adapter import (
+    create_pii_guard_from_langchain,
+    create_toxicity_guard_from_langchain,
+    create_moderation_guard_from_langchain,
+)
 
-rb.attach_guard("llm_node", PII_PACK)
+rb.attach_guard("llm_node", create_pii_guard_from_langchain())
+rb.attach_guard("llm_node", create_toxicity_guard_from_langchain())
 ```
 
-**Available Packs:**
-- `PII_PACK`: PII detection (email, phone, SSN)
-- `TOXICITY_PACK`: Toxicity detection
-- `HALLUCINATION_PACK`: Hallucination checks
-- `OUTPUT_VALIDATION_PACK`: Output validation
+**Available Guards:**
+- `create_pii_guard_from_langchain()`: PII detection using LangChain
+- `create_toxicity_guard_from_langchain()`: Toxicity detection using LangChain
+- `create_moderation_guard_from_langchain()`: Content moderation using LangChain
+
+**Note:** The deprecated `GuardPack` and built-in guard packs have been removed. Use LangChain guardrails for production use cases.
 
 ---
 

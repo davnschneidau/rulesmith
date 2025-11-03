@@ -27,7 +27,7 @@ print(result)  # {"eligible": True}
 
 - **DAG-based Rulebooks**: Build complex decision flows with rules, forks, gates, and conditional routing
 - **MLflow Integration**: Native MLflow 3 support with nested runs, traces, and lineage tracking
-- **BYOM Support**: Integrate any MLflow model (sklearn, PyTorch, XGBoost, custom pyfunc)
+- **Model Support**: Integrate any MLflow model (sklearn, PyTorch, XGBoost, custom pyfunc) or LangChain models
 - **GenAI Integration**: LangChain, LangGraph, and provider-agnostic LLM wrappers
 - **A/B Testing**: Built-in traffic splitting, hash bucketing, and bandit policies
 - **Guardrails**: PII detection, toxicity checks, hallucination validation, and custom guards
@@ -74,11 +74,11 @@ def build_loan_rulebook():
 
 ### Nodes
 - **RuleNode**: Executes a decorated rule function
-- **ForkNode**: A/B testing and traffic splitting
-- **GateNode**: Conditional routing based on expressions
-- **BYOMNode**: Loads and executes MLflow models
-- **GenAINode**: LLM inference with provider abstraction
+- **ModelNode**: Loads and executes MLflow models or LangChain models
+- **LLMNode**: LLM inference with provider abstraction (multi-provider support)
 - **HITLNode**: Human review and approval workflows
+
+**Note:** Fork and gate functionality is handled via functions (`fork()`, `gate()`) rather than node classes for better flexibility.
 
 ## MLflow Integration
 
@@ -108,10 +108,11 @@ rb.add_split("bandit_test", {"a": 1.0, "b": 1.0}, policy="thompson")
 ### Guardrails
 
 ```python
-from rulesmith.guardrails.packs import PII_PACK, TOXICITY_PACK
+from rulesmith.guardrails.langchain_adapter import create_pii_guard_from_langchain, create_toxicity_guard_from_langchain
 
-rb.attach_guard("llm_node", PII_PACK)  # Block PII
-rb.attach_guard("llm_node", TOXICITY_PACK)  # Block toxicity
+# Use LangChain guardrails (recommended)
+rb.attach_guard("llm_node", create_pii_guard_from_langchain())  # Block PII
+rb.attach_guard("llm_node", create_toxicity_guard_from_langchain())  # Block toxicity
 ```
 
 ### Human-in-the-Loop

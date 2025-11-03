@@ -57,9 +57,9 @@ rb.add_split("bandit", {"a": 1.0, "b": 1.0}, policy="thompson")
 ### Guardrails
 
 ```python
-from rulesmith.guardrails.packs import PII_PACK
+from rulesmith.guardrails.langchain_adapter import create_pii_guard_from_langchain
 
-rb.attach_guard("node_name", PII_PACK)
+rb.attach_guard("node_name", create_pii_guard_from_langchain())
 ```
 
 ### MLflow Integration
