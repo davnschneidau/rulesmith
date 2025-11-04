@@ -28,6 +28,7 @@ class ExecutionEngine:
         context: Any,
         nodes: Optional[Dict[str, Node]] = None,
         return_decision_result: bool = True,
+        enable_memoization: bool = False,
     ) -> Union[DecisionResult, Dict[str, Any]]:
         """
         Execute the rulebook DAG.
@@ -113,13 +114,38 @@ class ExecutionEngine:
                 
                 execution_time_ms = (time.time() - start_time) * 1000
 
-                # Metrics are now evaluated within the node's execute() method
+                # Metrics (guardrails) are evaluated within the node's execute() method
                 # They are stored in node_outputs["_metrics"]
-                # Store metrics in state for later aggregation into DecisionResult
+                # Extract and store metrics for DecisionResult and MLflow logging
                 if "_metrics" in node_outputs:
-                    # Prefix metrics with node name for tracking
-                    for metric_name, metric_data in node_outputs["_metrics"].items():
+                    metrics_dict = node_outputs["_metrics"]
+                    for metric_name, metric_data in metrics_dict.items():
+                        # Store full metric data for artifacts
                         state[f"_metrics_{node_name}_{metric_name}"] = metric_data
+                        
+                        # Extract metric value for metrics dict
+                        if isinstance(metric_data, dict):
+                            metric_value = metric_data.get("value", True)
+                            # Convert bool to numeric for MLflow
+                            if isinstance(metric_value, bool):
+                                metric_value = 1.0 if metric_value else 0.0
+                            elif metric_value is None:
+                                metric_value = 0.0
+                            else:
+                                metric_value = float(metric_value)
+                            
+                            # Add to metrics dict with guard prefix
+                            metrics[f"guard_{node_name}_{metric_name}"] = metric_value
+                            
+                            # Track violations
+                            if not metric_data.get("value", True):
+                                if "guard_violations" not in metrics:
+                                    metrics["guard_violations"] = 0
+                                metrics["guard_violations"] += 1
+                        else:
+                            # Simple value
+                            metric_value = float(bool(metric_data)) if metric_data is not None else 0.0
+                            metrics[f"guard_{node_name}_{metric_name}"] = metric_value
 
                 # Track fired rules for rule nodes
                 if node.kind == "rule":

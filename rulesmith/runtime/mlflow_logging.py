@@ -196,21 +196,21 @@ class MLflowLogger:
         elif "cost_usd" in decision.metrics:
             metrics["cost_usd"] = float(decision.metrics["cost_usd"])
 
-        # Guardrail metrics (from _metrics in node outputs)
-        guard_violations = 0
-        guard_metrics = {}
+        # Guardrail metrics (from guard_* prefixed metrics)
+        guard_violations = decision.metrics.get("guard_violations", 0)
+        metrics["guard_violations"] = int(guard_violations)
+        
+        # Extract guard metrics (guard_{node}_{metric_name})
         for key, value in decision.metrics.items():
-            if key.startswith("_metrics_"):
-                # Extract metric name and check if it failed
-                metric_name = key.replace("_metrics_", "")
-                if isinstance(value, dict) and not value.get("value", True):
-                    guard_violations += 1
-                    guard_metrics[f"guard_{metric_name}_fail"] = 1
+            if key.startswith("guard_") and key != "guard_violations":
+                # Already in correct format from execution engine
+                metrics[key] = float(value)
+                
+                # Also create fail flags
+                if isinstance(value, (int, float)) and value == 0.0:
+                    metrics[f"{key}_fail"] = 1
                 else:
-                    guard_metrics[f"guard_{metric_name}_fail"] = 0
-
-        metrics["guard_violations"] = guard_violations
-        metrics.update(guard_metrics)
+                    metrics[f"{key}_fail"] = 0
 
         # Action count (if available)
         if "action_count" in decision.metrics:

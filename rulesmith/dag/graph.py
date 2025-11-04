@@ -455,6 +455,7 @@ class Rulebook:
         context: Optional[Any] = None,
         enable_mlflow: bool = True,
         return_decision_result: bool = True,
+        mlflow_logger: Optional[Any] = None,
     ):
         """
         Execute the rulebook with a payload.
@@ -504,6 +505,41 @@ class Rulebook:
                 return_decision_result=return_decision_result,
                 enable_memoization=True,  # Enable memoization by default
             )
+        
+        # Log to MLflow using comprehensive logger if provided
+        if enable_mlflow and mlflow_logger and return_decision_result and isinstance(result, DecisionResult):
+            try:
+                # Build context dict for logging
+                log_context = {
+                    "rulebook_name": self.name,
+                    "rulebook_version": self.version,
+                    "trace_id": getattr(context, "run_id", None) or getattr(context, "trace_id", None),
+                    "stage": getattr(context, "stage", None) or getattr(context, "env", "unknown"),
+                    "tenant": getattr(context, "tenant_id", None) or getattr(context, "tenant", "default"),
+                    "source": getattr(context, "source", "unknown"),
+                    "run_kind": getattr(context, "run_kind", "decision"),
+                    "engine": "dag",
+                    "alias": getattr(context, "alias", "unknown"),
+                }
+                
+                # Add optional context fields
+                if hasattr(context, "input_schema_hash"):
+                    log_context["input_schema_hash"] = context.input_schema_hash
+                if hasattr(context, "git_commit"):
+                    log_context["git_commit"] = context.git_commit
+                if hasattr(context, "guard_policy_version"):
+                    log_context["guard_policy_version"] = context.guard_policy_version
+                
+                # Add redacted inputs if available
+                if hasattr(context, "redacted_inputs"):
+                    log_context["redacted_inputs"] = context.redacted_inputs
+                
+                # Log decision
+                mlflow_logger.log_decision(result, log_context)
+            except Exception as e:
+                # Don't fail execution if MLflow logging fails
+                import warnings
+                warnings.warn(f"MLflow logging failed: {str(e)}")
         
         # Return DecisionResult or Dict based on flag
         if return_decision_result:
