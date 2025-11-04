@@ -348,6 +348,44 @@ class Rulebook:
         node.metrics.extend(metrics)
 
         return self
+    
+    def set_metric_threshold(
+        self,
+        metric_name: str,
+        threshold: float,
+        operator: str = "<=",
+        alert_action: Optional[str] = None,
+        alert_hook: Optional[Callable] = None,
+    ) -> "Rulebook":
+        """
+        Set a threshold for a metric.
+        
+        Args:
+            metric_name: Name of the metric
+            threshold: Threshold value
+            operator: Comparison operator (<=, >=, ==, <, >)
+            alert_action: Action on breach ("log", "route_to_hitl", "hook")
+            alert_hook: Optional callable for custom actions
+        
+        Returns:
+            Self for chaining
+            
+        Examples:
+            rb.set_metric_threshold("toxicity_score", threshold=0.5, operator="<=")
+            rb.set_metric_threshold("latency_ms", threshold=100, operator="<=")
+        """
+        from rulesmith.metrics.core import get_metric_registry
+        
+        registry = get_metric_registry()
+        registry.set_threshold(
+            metric_name,
+            threshold,
+            operator=operator,
+            alert_action=alert_action,
+            alert_hook=alert_hook,
+        )
+        
+        return self
 
     def to_spec(self) -> RulebookSpec:
         """Serialize rulebook to RulebookSpec."""
@@ -440,7 +478,7 @@ class Rulebook:
         if context is None:
             if enable_mlflow:
                 try:
-                    from rulesmith.runtime.mlflow_context import MLflowRunContext
+                    from rulesmith.mlflow import MLflowRunContext
                     context = MLflowRunContext(rulebook_spec=spec, enable_mlflow=True)
                 except Exception:
                     # MLflow not available, fall back to basic context
@@ -454,7 +492,7 @@ class Rulebook:
         # Auto-create MLflow logger if not provided but MLflow is enabled
         if enable_mlflow and mlflow_logger is None:
             try:
-                from rulesmith.runtime.mlflow_logging import MLflowLogger
+                from rulesmith.mlflow import MLflowLogger
                 # Create logger with sensible defaults
                 experiment_name = f"rulesmith/{self.name}"
                 mlflow_logger = MLflowLogger(

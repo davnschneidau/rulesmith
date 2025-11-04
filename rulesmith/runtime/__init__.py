@@ -2,7 +2,7 @@
 
 from rulesmith.runtime.context import RunContext
 from rulesmith.runtime.hooks import Hooks, HookRegistry, hook_registry
-from rulesmith.runtime.mlflow_context import MLflowRunContext, NodeExecutionContext
+from rulesmith.mlflow import MLflowRunContext, NodeExecutionContext
 from rulesmith.runtime.plugins import Plugin, PluginRegistry, discover_plugins, load_plugin_from_module, plugin_registry
 
 __all__ = [
