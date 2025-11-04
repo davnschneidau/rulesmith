@@ -115,24 +115,11 @@ class ExecutionEngine:
 
                 # Metrics are now evaluated within the node's execute() method
                 # They are stored in node_outputs["_metrics"]
-                # Log metrics to MLflow if available
+                # Store metrics in state for later aggregation into DecisionResult
                 if "_metrics" in node_outputs:
-                    try:
-                        import mlflow
-                        if hasattr(context, "enable_mlflow") and context.enable_mlflow:
-                            metrics_dict = node_outputs["_metrics"]
-                            for metric_name, metric_data in metrics_dict.items():
-                                # Log metric value (0.0 for False, 1.0 for True, or actual numeric value)
-                                metric_value = metric_data.get("value", 0.0)
-                                if isinstance(metric_value, bool):
-                                    metric_value = 1.0 if metric_value else 0.0
-                                mlflow.log_metric(f"{node_name}_{metric_name}", float(metric_value))
-                                
-                                # Log message as tag if available
-                                if metric_data.get("message"):
-                                    mlflow.set_tag(f"{node_name}_{metric_name}_message", metric_data["message"])
-                    except Exception:
-                        pass  # MLflow not available - that's okay
+                    # Prefix metrics with node name for tracking
+                    for metric_name, metric_data in node_outputs["_metrics"].items():
+                        state[f"_metrics_{node_name}_{metric_name}"] = metric_data
 
                 # Track fired rules for rule nodes
                 if node.kind == "rule":
