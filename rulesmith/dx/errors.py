@@ -112,7 +112,6 @@ class RulebookErrorHandler:
         input_data: Optional[Dict[str, Any]],
     ) -> List[str]:
         """Generate helpful suggestions based on error type and context."""
-        """Generate helpful suggestions based on error."""
         suggestions = []
         error_type = type(error).__name__
         

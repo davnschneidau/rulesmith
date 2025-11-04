@@ -401,7 +401,7 @@ class Rulebook:
         enable_mlflow: bool = True,
         return_decision_result: bool = True,
         mlflow_logger: Optional[Any] = None,
-        debug: bool = False,
+            debug: bool = False,
     ):
         """
         Execute the rulebook with a payload.
@@ -418,6 +418,14 @@ class Rulebook:
 
         Returns:
             DecisionResult (default) or Dict (if return_decision_result=False)
+        
+        Examples:
+            # Simple execution
+            result = rb.run({"age": 30, "income": 50000})
+            
+            # With debug mode
+            result = rb.run({"age": 30, "income": 50000}, debug=True)
+            # Access debug info: result.debug_info
         """
         from rulesmith.io.decision_result import DecisionResult
         

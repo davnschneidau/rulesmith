@@ -8,6 +8,7 @@ from rulesmith.governance.audit import (
     log_deployment,
     log_promotion,
 )
+from rulesmith.governance.comparison import RulebookDiff as ComparisonRulebookDiff, compare_rulebooks
 from rulesmith.governance.diff import RulebookDiff, diff_rulebook_uris, diff_rulebooks
 from rulesmith.governance.lineage import LineageGraph, build_lineage, get_model_lineage
 from rulesmith.governance.pii_minimization import (
@@ -58,6 +59,9 @@ __all__ = [
     "RulebookDiff",
     "diff_rulebooks",
     "diff_rulebook_uris",
+    # Comparison
+    "ComparisonRulebookDiff",
+    "compare_rulebooks",
     # Lineage
     "LineageGraph",
     "build_lineage",
