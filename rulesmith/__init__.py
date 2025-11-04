@@ -7,12 +7,11 @@ from rulesmith.governance import compare_rulebooks
 from rulesmith.metrics import (
     Metric,
     MetricRegistry,
-    MetricThresholdManager,
     compare_mlflow_metrics,
     get_metric_registry,
     query_mlflow_metrics,
 )
-from rulesmith.runtime.mlflow_logging import MLflowLogger, log_decision_to_mlflow
+from rulesmith.mlflow import MLflowLogger, MLflowRunContext, log_decision_to_mlflow, log_rulebook_model
 from rulesmith.testing import RulebookTester
 
 __version__ = "0.1.0"
@@ -28,9 +27,12 @@ __all__ = [
     "Metric",
     "MetricRegistry",
     "get_metric_registry",
-    "MetricThresholdManager",
     "query_mlflow_metrics",
     "compare_mlflow_metrics",
+    "MLflowLogger",
+    "MLflowRunContext",
+    "log_decision_to_mlflow",
+    "log_rulebook_model",
     "RulebookTester",
     "compare_rulebooks",
 ]

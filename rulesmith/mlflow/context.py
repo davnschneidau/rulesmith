@@ -1,4 +1,4 @@
-"""MLflow-aware runtime context with automatic run management."""
+"""MLflow-aware execution context."""
 
 import time
 from typing import Any, Dict, Optional
@@ -6,10 +6,15 @@ from typing import Any, Dict, Optional
 import mlflow
 from mlflow.entities import RunStatus
 
-from rulesmith.io.mlflow_io import end_run, start_run
 from rulesmith.io.ser import RulebookSpec
+from rulesmith.mlflow.logging import (
+    log_genai_metrics,
+    log_node_execution,
+    start_genai_trace,
+    start_node_run,
+)
+from rulesmith.mlflow.io import end_run, log_lineage, log_rulebook, start_run
 from rulesmith.runtime.context import RunContext
-from rulesmith.runtime.tracing import log_genai_metrics, log_node_execution, start_genai_trace, start_node_run
 
 
 class MLflowRunContext(RunContext):
@@ -63,8 +68,6 @@ class MLflowRunContext(RunContext):
             )
 
             # Log rulebook spec as artifact
-            from rulesmith.io.mlflow_io import log_rulebook, log_lineage
-
             log_rulebook(self.rulebook_spec)
             log_lineage(self.rulebook_spec)
 

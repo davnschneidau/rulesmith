@@ -114,24 +114,18 @@ class ExecutionEngine:
                 
                 execution_time_ms = (time.time() - start_time) * 1000
 
-                # Extract metrics from node outputs (guardrails, LLM metrics, etc.)
+                # Extract metrics from state - metrics are now just regular outputs
                 from rulesmith.dag.metrics_extractor import (
                     extract_llm_metrics_from_output,
-                    extract_metrics_from_node_output,
+                    extract_metrics_from_state,
                 )
-                from rulesmith.runtime.mlflow_hooks import log_node_execution_to_mlflow
                 
-                # Extract guardrail metrics
-                extract_metrics_from_node_output(node_name, node_outputs, metrics, state)
+                # Extract metrics from state (including guardrails)
+                extract_metrics_from_state(state, node_name, metrics)
                 
                 # Extract LLM-specific metrics
                 if node.kind == "llm":
                     extract_llm_metrics_from_output(node_name, node_outputs, metrics, costs)
-                
-                # Log to MLflow if enabled
-                log_node_execution_to_mlflow(
-                    node_name, node.kind, execution_time_ms, node_outputs, context
-                )
 
                 # Track fired rules for rule nodes
                 if node.kind == "rule":

@@ -1,4 +1,4 @@
-"""MLflow pyfunc flavor for Rulebooks."""
+"""MLflow pyfunc model for Rulebooks."""
 
 import json
 import os
@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional
 import mlflow.pyfunc
 from mlflow.models import Model, ModelInputExample, ModelSignature
 from mlflow.pyfunc import PythonModel, PythonModelContext
-from mlflow.utils.environment import _mlflow_conda_env
 
 from rulesmith.dag.graph import Rulebook
 from rulesmith.io.ser import RulebookSpec
@@ -45,14 +44,6 @@ def log_rulebook_model(
     # Log spec as dict (artifact)
     mlflow.log_dict(spec.model_dump(), "rulebook_spec.json")
 
-    # Infer signature if not provided
-    if signature is None:
-        # Try to infer from first node's inputs
-        if spec.nodes:
-            # For now, use generic signature
-            # Could be enhanced to infer from rule specs
-            pass
-
     # Log model
     model = mlflow.pyfunc.log_model(
         artifact_path=artifact_path,
@@ -76,8 +67,6 @@ class RulebookPyfunc(PythonModel):
 
     def load_context(self, context: PythonModelContext) -> None:
         """Load rulebook spec from artifacts."""
-        import os
-
         # Get the artifact path
         artifact_path = context.artifacts.get("rulebook_spec.json")
         if artifact_path:

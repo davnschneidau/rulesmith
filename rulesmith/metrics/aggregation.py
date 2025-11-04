@@ -1,6 +1,6 @@
 """MLflow-based metric aggregation and comparison."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 try:
     import mlflow
@@ -58,8 +58,12 @@ def query_mlflow_metrics(
             filters.append(filter_string)
         
         # Query runs
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        if experiment is None:
+            return {name: {} for name in metric_names}
+        
         runs = client.search_runs(
-            experiment_ids=[mlflow.get_experiment_by_name(experiment_name).experiment_id],
+            experiment_ids=[experiment.experiment_id],
             filter_string=" AND ".join(filters) if filters else "",
             max_results=max_results,
         )
@@ -190,4 +194,3 @@ def compare_mlflow_metrics(
         }
     
     return results
-

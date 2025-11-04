@@ -337,39 +337,35 @@ class LLMNode(Node):
         if hasattr(context, "set_model_uri") and self.model_uri:
             context.set_model_uri(self.model_uri)
 
-        # Evaluate metrics (guardrails) on output
+        # Evaluate metrics (guardrails) on output - treat as regular rules
+        # Metrics are just rule functions that produce numeric outputs
         if self.metrics:
-            metric_results = {}
             for metric_func in self.metrics:
                 try:
-                    # Metric functions receive the output to evaluate
+                    # Call metric function like a regular rule
+                    # It receives the full state (output) and returns a dict
                     metric_result = metric_func(output)
                     
-                    # Normalize metric result
+                    # Merge results into output - no special "_metrics" dict
                     if isinstance(metric_result, dict):
-                        metric_name = metric_result.get("name", metric_func.__name__)
-                        metric_value = metric_result.get("value", metric_result.get("passed", True))
-                        metric_message = metric_result.get("message")
+                        # Update output with metric values
+                        for key, value in metric_result.items():
+                            if key != "_metric":  # Skip internal marker
+                                output[key] = value
+                            
+                            # If there's a _metric marker, that's the metric name
+                            if "_metric" in metric_result:
+                                metric_name = metric_result["_metric"]
+                                output[metric_name] = metric_result.get(metric_name, value)
                     else:
+                        # Simple boolean/numeric result - use function name as metric
                         metric_name = getattr(metric_func, "_rule_spec", {}).name if hasattr(metric_func, "_rule_spec") else metric_func.__name__
-                        metric_value = bool(metric_result) if metric_result is not None else True
-                        metric_message = None
-                    
-                    metric_results[f"{metric_name}"] = {
-                        "value": metric_value,
-                        "message": metric_message,
-                    }
+                        output[metric_name] = float(bool(metric_result)) if metric_result is not None else 0.0
                 except Exception as e:
-                    # On error, record failure
+                    # On error, record failure as metric value 0
                     metric_name = getattr(metric_func, "_rule_spec", {}).name if hasattr(metric_func, "_rule_spec") else metric_func.__name__
-                    metric_results[f"{metric_name}"] = {
-                        "value": False,
-                        "message": f"Metric evaluation error: {str(e)}",
-                        "error": str(e),
-                    }
-            
-            # Add metrics to output
-            output["_metrics"] = metric_results
+                    output[f"{metric_name}_error"] = 1.0
+                    output[metric_name] = 0.0
 
         # Log LLM metrics if context supports it
         if hasattr(context, "finish_genai"):
