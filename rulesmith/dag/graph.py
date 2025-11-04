@@ -171,7 +171,7 @@ class Rulebook:
         model_name: Optional[str] = None,
         gateway_uri: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
-        metrics: Optional[List[Callable]] = None,
+        metrics: Optional[List[Any]] = None,
     ) -> "Rulebook":
         """
         Add an LLM node.
@@ -246,61 +246,6 @@ class Rulebook:
         self._nodes[name] = node
         return self
 
-    def add_langchain(
-        self,
-        name: str,
-        chain_model_uri: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> "Rulebook":
-        """
-        Add a LangChain chain node.
-        
-        DEPRECATED: Use add_model() with model_uri pointing to LangChain model instead.
-
-        Args:
-            name: Node name
-            chain_model_uri: MLflow model URI for LangChain chain
-            params: Optional parameters
-
-        Returns:
-            Self for chaining
-        """
-        import warnings
-        warnings.warn(
-            "add_langchain() is deprecated. Use add_model() with model_uri instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Use ModelNode which can handle LangChain models
-        return self.add_model(name, model_uri=chain_model_uri, params=params)
-
-    def add_langgraph(
-        self,
-        name: str,
-        graph_model_uri: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> "Rulebook":
-        """
-        Add a LangGraph graph node.
-        
-        DEPRECATED: Use add_model() with model_uri pointing to LangGraph model instead.
-
-        Args:
-            name: Node name
-            graph_model_uri: MLflow model URI for LangGraph graph
-            params: Optional parameters
-
-        Returns:
-            Self for chaining
-        """
-        import warnings
-        warnings.warn(
-            "add_langgraph() is deprecated. Use add_model() with model_uri instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Use ModelNode which can handle LangGraph models
-        return self.add_model(name, model_uri=graph_model_uri, params=params)
 
     def connect(
         self,
@@ -456,15 +401,20 @@ class Rulebook:
         enable_mlflow: bool = True,
         return_decision_result: bool = True,
         mlflow_logger: Optional[Any] = None,
+        debug: bool = False,
     ):
         """
         Execute the rulebook with a payload.
 
         Args:
             payload: Input payload dictionary
-            context: Optional execution context (RunContext or MLflowRunContext)
+            context: Optional execution context (RunContext or MLflowRunContext). 
+                    If None, automatically created based on enable_mlflow flag.
             enable_mlflow: Whether to enable MLflow logging (default: True)
-            return_decision_result: If True, return DecisionResult; if False, return Dict (legacy)
+            return_decision_result: If True, return DecisionResult; if False, return Dict (legacy, default: True)
+            mlflow_logger: Optional MLflowLogger instance. If None and enable_mlflow=True, 
+                          automatically creates one with sensible defaults.
+            debug: If True, include debug information in result (default: False)
 
         Returns:
             DecisionResult (default) or Dict (if return_decision_result=False)
@@ -477,15 +427,38 @@ class Rulebook:
         for name, node in self._nodes.items():
             engine.register_node(name, node)
 
-        # Create simple context if not provided
+        # Create context automatically if not provided
         # For most users, MLflow integration "just works" - no need to understand contexts
         if context is None:
             if enable_mlflow:
-                from rulesmith.runtime.mlflow_context import MLflowRunContext
-                context = MLflowRunContext(rulebook_spec=spec, enable_mlflow=True)
+                try:
+                    from rulesmith.runtime.mlflow_context import MLflowRunContext
+                    context = MLflowRunContext(rulebook_spec=spec, enable_mlflow=True)
+                except Exception:
+                    # MLflow not available, fall back to basic context
+                    from rulesmith.runtime.context import RunContext
+                    context = RunContext()
+                    enable_mlflow = False  # Disable MLflow if not available
             else:
                 from rulesmith.runtime.context import RunContext
                 context = RunContext()
+        
+        # Auto-create MLflow logger if not provided but MLflow is enabled
+        if enable_mlflow and mlflow_logger is None:
+            try:
+                from rulesmith.runtime.mlflow_logging import MLflowLogger
+                # Create logger with sensible defaults
+                experiment_name = f"rulesmith/{self.name}"
+                mlflow_logger = MLflowLogger(
+                    experiment_name=experiment_name,
+                    sample_rate=0.01,  # Sample 1% in production by default
+                    enable_artifacts=True,
+                    redact_pii=True,
+                )
+            except Exception:
+                # MLflow not available, disable logging
+                mlflow_logger = None
+                enable_mlflow = False
 
         # Execute - context manager handles setup/teardown automatically
         if hasattr(context, "__enter__"):

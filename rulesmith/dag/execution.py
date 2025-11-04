@@ -114,38 +114,24 @@ class ExecutionEngine:
                 
                 execution_time_ms = (time.time() - start_time) * 1000
 
-                # Metrics (guardrails) are evaluated within the node's execute() method
-                # They are stored in node_outputs["_metrics"]
-                # Extract and store metrics for DecisionResult and MLflow logging
-                if "_metrics" in node_outputs:
-                    metrics_dict = node_outputs["_metrics"]
-                    for metric_name, metric_data in metrics_dict.items():
-                        # Store full metric data for artifacts
-                        state[f"_metrics_{node_name}_{metric_name}"] = metric_data
-                        
-                        # Extract metric value for metrics dict
-                        if isinstance(metric_data, dict):
-                            metric_value = metric_data.get("value", True)
-                            # Convert bool to numeric for MLflow
-                            if isinstance(metric_value, bool):
-                                metric_value = 1.0 if metric_value else 0.0
-                            elif metric_value is None:
-                                metric_value = 0.0
-                            else:
-                                metric_value = float(metric_value)
-                            
-                            # Add to metrics dict with guard prefix
-                            metrics[f"guard_{node_name}_{metric_name}"] = metric_value
-                            
-                            # Track violations
-                            if not metric_data.get("value", True):
-                                if "guard_violations" not in metrics:
-                                    metrics["guard_violations"] = 0
-                                metrics["guard_violations"] += 1
-                        else:
-                            # Simple value
-                            metric_value = float(bool(metric_data)) if metric_data is not None else 0.0
-                            metrics[f"guard_{node_name}_{metric_name}"] = metric_value
+                # Extract metrics from node outputs (guardrails, LLM metrics, etc.)
+                from rulesmith.dag.metrics_extractor import (
+                    extract_llm_metrics_from_output,
+                    extract_metrics_from_node_output,
+                )
+                from rulesmith.runtime.mlflow_hooks import log_node_execution_to_mlflow
+                
+                # Extract guardrail metrics
+                extract_metrics_from_node_output(node_name, node_outputs, metrics, state)
+                
+                # Extract LLM-specific metrics
+                if node.kind == "llm":
+                    extract_llm_metrics_from_output(node_name, node_outputs, metrics, costs)
+                
+                # Log to MLflow if enabled
+                log_node_execution_to_mlflow(
+                    node_name, node.kind, execution_time_ms, node_outputs, context
+                )
 
                 # Track fired rules for rule nodes
                 if node.kind == "rule":
@@ -182,25 +168,7 @@ class ExecutionEngine:
                         # If tracking fails, continue but add warning
                         warnings.append(f"Failed to track rule {node_name}: {str(e)}")
 
-                # Track costs from LLM nodes
-                if node.kind in ("llm", "genai") and node_outputs:
-                    # Try to extract token/cost information
-                    if isinstance(node_outputs, dict):
-                        if "tokens" in node_outputs and isinstance(node_outputs["tokens"], dict):
-                            total_tokens = node_outputs["tokens"].get("total_tokens", 0)
-                            if total_tokens > 0:
-                                metrics[f"{node_name}_tokens"] = float(total_tokens)
-                        
-                        # Extract cost if available
-                        if "cost" in node_outputs:
-                            costs[f"{node_name}_cost"] = float(node_outputs["cost"])
-                        elif "cost_usd" in node_outputs:
-                            costs[f"{node_name}_cost"] = float(node_outputs["cost_usd"])
-                        
-                        # Try to extract from tokens if provider info available
-                        if "tokens" in node_outputs and "provider" in node_outputs:
-                            # Simple cost estimation (would be better with provider-specific rates)
-                            pass  # Could add cost calculation here
+                # LLM metrics extraction is now handled in metrics_extractor module above
 
                 # Track metrics
                 metrics[f"{node_name}_duration_ms"] = execution_time_ms
